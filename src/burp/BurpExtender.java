@@ -419,10 +419,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
                 signedRequest.applyProfile(profile);
                 byte[] requestBytes = signedRequest.getSignedRequestBytes(profile.secretKey);
-
-                inf.println("Signed request with profile: "+profile);
                 if (requestBytes != null) {
-                    inf.println("Request has been modified");
+                    inf.println("Signed request with profile: "+profile);
                     messageInfo.setRequest(requestBytes);
                 }
             }

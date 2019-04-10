@@ -35,13 +35,14 @@ public class AWSProfile implements Serializable {
 
     public static ArrayList<AWSProfile> fromCredentialPath(Path path)
     {
-        String profileName = null;
+        String profileName = "";
         HashMap<String, String> tmpProfile = new HashMap<>();
         ArrayList<AWSProfile> profileList = new ArrayList<>();
         try {
             for (Iterator<String> i = Files.lines(path).iterator(); i.hasNext(); ) {
                 final String line = i.next().trim();
-                if (line.startsWith("[")) {
+                if (line.startsWith("[") && line.endsWith("]")) {
+                    tmpProfile.clear();
                     profileName = line.replace("[", "").replace("]", "").trim();
                 } else if (line.startsWith("aws_access_key_id")) {
                     final String access_key = line.split("=")[1].trim();
@@ -53,7 +54,7 @@ public class AWSProfile implements Serializable {
                     //inf.println(String.format("Unrecognized content: '%s'", line));
                 }
 
-                if (tmpProfile.size() == 2) {
+                if (!profileName.equals("") && tmpProfile.containsKey("aws_access_key_id") && tmpProfile.containsKey("aws_secret_access_key")) {
                     profileList.add(new AWSProfile(
                             profileName,
                             tmpProfile.get("aws_access_key_id"),
@@ -65,6 +66,7 @@ public class AWSProfile implements Serializable {
                             true,
                             true));
                     tmpProfile.clear();
+                    profileName = "";
                 }
             }
         } catch (IOException exc) {
