@@ -97,9 +97,8 @@ public class AWSSignedRequest {
         if (!profile.regionAuto) {
             this.setRegion(profile.region);
         }
-        if (!profile.accessKeyIdAuto) {
-            this.setAccessKeyId(profile.accessKeyId);
-        }
+        // this is a NOP unless using a default profile
+        this.setAccessKeyId(profile.accessKeyId);
     }
 
     /*

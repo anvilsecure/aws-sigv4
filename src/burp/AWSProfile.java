@@ -11,7 +11,6 @@ import java.util.Iterator;
 public class AWSProfile implements Serializable {
     public String name;
     public String accessKeyId;
-    public boolean accessKeyIdAuto;
     public String secretKey;
     public String region;
     public boolean regionAuto;
@@ -19,11 +18,10 @@ public class AWSProfile implements Serializable {
     public boolean serviceAuto;
     public boolean isActive;
 
-    public AWSProfile(String name, String accessKeyId, boolean accessKeyIdAuto, String secretKey, String region, boolean regionAuto,
+    public AWSProfile(String name, String accessKeyId, String secretKey, String region, boolean regionAuto,
                       String service, boolean serviceAuto, boolean isActive) {
         this.name = name;
         this.accessKeyId = accessKeyId;
-        this.accessKeyIdAuto = accessKeyIdAuto;
         this.secretKey = secretKey;
         this.region = region;
         this.regionAuto = regionAuto;
@@ -57,7 +55,6 @@ public class AWSProfile implements Serializable {
                     profileList.add(new AWSProfile(
                             profileName,
                             tmpProfile.get("aws_access_key_id"),
-                            true,
                             tmpProfile.get("aws_secret_access_key"),
                             "",
                             true,

@@ -75,6 +75,7 @@
         </constraints>
         <properties>
           <text value="region"/>
+          <toolTipText value="Recommend setting to auto"/>
         </properties>
       </component>
       <component id="22734" class="javax.swing.JLabel">
@@ -83,6 +84,7 @@
         </constraints>
         <properties>
           <text value="service"/>
+          <toolTipText value="Recommend setting to auto"/>
         </properties>
       </component>
       <component id="b5a8a" class="javax.swing.JTextField" binding="regionTextField">
@@ -112,14 +114,6 @@
         <properties>
           <text value="Auto"/>
           <toolTipText value="Determine these parameters from the request"/>
-        </properties>
-      </component>
-      <component id="f5ce4" class="javax.swing.JCheckBox" binding="accessKeyIdcheckBox">
-        <constraints>
-          <grid row="2" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
-        </constraints>
-        <properties>
-          <text value=""/>
         </properties>
       </component>
       <component id="82b29" class="javax.swing.JCheckBox" binding="regionCheckBox">

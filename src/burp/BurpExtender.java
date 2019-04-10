@@ -31,7 +31,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JTextField secretKeyTextField;
     private JTextField regionTextField;
     private JTextField serviceTextField;
-    private JCheckBox accessKeyIdcheckBox;
     private JCheckBox regionCheckBox;
     private JCheckBox serviceCheckBox;
     private JButton saveProfileButton;
@@ -166,7 +165,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private AWSProfile profileFromCurrentForm()
     {
-        return new AWSProfile(nameTextField.getText(), accessKeyIdTextField.getText(), accessKeyIdcheckBox.isSelected(),
+        return new AWSProfile(nameTextField.getText(), accessKeyIdTextField.getText(),
             secretKeyTextField.getText(), regionTextField.getText(), regionCheckBox.isSelected(), serviceTextField.getText(),
             serviceCheckBox.isSelected(),true);
     }
@@ -248,7 +247,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.regionTextField.setText("");
         this.serviceTextField.setText("");
 
-        this.accessKeyIdcheckBox.setSelected(false);
         this.regionCheckBox.setSelected(false);
         this.serviceCheckBox.setSelected(false);
     }
@@ -277,7 +275,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.regionTextField.setText(profile.region);
         this.serviceTextField.setText(profile.service);
 
-        this.accessKeyIdcheckBox.setSelected(profile.accessKeyIdAuto);
         this.regionCheckBox.setSelected(profile.regionAuto);
         this.serviceCheckBox.setSelected(profile.serviceAuto);
     }
@@ -395,7 +392,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         for (int i = 0; i < this.defaultProfileComboBox.getItemCount(); i++) {
             if (this.defaultProfileComboBox.getItemAt(i).equals(defaultProfileName)) {
                 this.defaultProfileComboBox.setSelectedIndex(i);
-                updateStatus("Default profile changed. You likely want to uncheck keyId auto.");
+                updateStatus("Default profile changed.");
                 return true;
             }
         }
@@ -409,6 +406,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             IRequestInfo request = helpers.analyzeRequest(messageInfo);
             if (isAwsRequest(request)) {
 
+                // use default profile, if there is one. else, match profile based on access key id in the request
                 AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this.callbacks);
                 AWSProfile profile = this.profileNameMap.get(getDefaultProfileName());
                 if (profile == null) {
