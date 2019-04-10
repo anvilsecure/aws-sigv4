@@ -122,6 +122,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     public List<JMenuItem> getContextMenuItems() {
         JMenu menu = new JMenu("AWSig");
 
+        // add disable item
         JRadioButtonMenuItem item = new JRadioButtonMenuItem("Disable AWSig", !isEnabled());
         item.addActionListener(new ActionListener() {
             @Override
@@ -130,7 +131,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         });
         menu.add(item);
-        for (final String name : this.profileNameMap.keySet()) {
+
+        ArrayList<String> profileList = new ArrayList<>(this.profileNameMap.keySet());
+        profileList.add(0, ""); // no default option
+
+        for (final String name : profileList) {
             item = new JRadioButtonMenuItem(name, isEnabled() && name.equals(getDefaultProfileName()));
             item.addActionListener(new ActionListener() {
                 @Override
