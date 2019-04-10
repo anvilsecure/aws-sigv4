@@ -335,9 +335,9 @@ public class AWSSignedRequest {
             return null;
         }
 
-        inf.println("===========BEGIN CANONICAL REQUEST==========");
-        inf.println(canonicalRequest);
-        inf.println("===========END CANONICAL REQUEST============");
+        //inf.println("===========BEGIN CANONICAL REQUEST==========");
+        //inf.println(canonicalRequest);
+        //inf.println("===========END CANONICAL REQUEST============");
         return DatatypeConverter.printHexBinary(digest.digest(canonicalRequest.getBytes())).toLowerCase();
     }
 
@@ -399,9 +399,9 @@ public class AWSSignedRequest {
                 getCredentialScope(false),
                 getHashedCanonicalRequest()
         );
-        inf.println("===========BEGIN STRING TO SIGN=============");
-        inf.println(toSign);
-        inf.println("===========END STRING TO SIGN===============");
+        //inf.println("===========BEGIN STRING TO SIGN=============");
+        //inf.println(toSign);
+        //inf.println("===========END STRING TO SIGN===============");
 
         final byte[] kDate = getHmac(stringToBytes("AWS4"+secretKey), stringToBytes(this.amzDateYMD));
         final byte[] kRegion = getHmac(kDate, stringToBytes(this.region));

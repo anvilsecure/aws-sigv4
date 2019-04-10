@@ -136,8 +136,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 @Override
                 public void actionPerformed(ActionEvent actionEvent) {
                     JRadioButtonMenuItem item = (JRadioButtonMenuItem)actionEvent.getSource();
+                    setDefaultProfileName(item.getText());
                     enabledCheckBox.setSelected(true);
-                    //inf.println(String.format("MenuItem '%s' is selected = '%s'", item.getText(), item.isSelected() ? "yes" : "no"));
                 }
             });
             menu.add(item);
@@ -230,10 +230,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.defaultProfileComboBox.addItem(""); // disabled
         for (final String name : this.profileNameMap.keySet()) {
             this.defaultProfileComboBox.addItem(name);
-            if (name.equals(defaultProfileName)) {
-                this.defaultProfileComboBox.setSelectedIndex(this.defaultProfileComboBox.getItemCount() - 1);
-            }
         }
+        setDefaultProfileName(defaultProfileName);
         updateForm(this.nameTextField.getText());
     }
 
@@ -392,6 +390,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         for (int i = 0; i < this.defaultProfileComboBox.getItemCount(); i++) {
             if (this.defaultProfileComboBox.getItemAt(i).equals(defaultProfileName)) {
                 this.defaultProfileComboBox.setSelectedIndex(i);
+                updateStatus("Default profile changed. You likely want to uncheck keyId auto.");
                 return true;
             }
         }
@@ -404,8 +403,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         if (messageIsRequest && enabledCheckBox.isSelected()) {
             IRequestInfo request = helpers.analyzeRequest(messageInfo);
             if (isAwsRequest(request)) {
-                inf.println("**************Got an AWS request**************");
-                //printHeaders(request);
 
                 AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this.callbacks);
                 AWSProfile profile = this.profileNameMap.get(getDefaultProfileName());
