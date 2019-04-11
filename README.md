@@ -50,3 +50,5 @@ Hit the "Import Profiles" button to automatically import credentials. See https:
 At a minimum, a profile should contain a keyId and a secretKey. Outgoing requests will be signed with the key associated with the keyId in the original request. If the keyId is not recognized, the message will be sent unmodifed. Alternatively, a "Default Profile" can be set which will be used to sign all outgoing requests regardless of the original keyId.
 
 region and service should almost always be left blank with the checkbox under "auto" selected. This will ensure the region and service in the original request are used which is what is wanted in most cases.
+
+Profiles will be saved in the Burp settings store, including AWS keys, if "Persist Profiles" is checked.

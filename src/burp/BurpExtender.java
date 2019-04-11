@@ -15,7 +15,8 @@ import java.util.List;
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener
 {
-    private static String SETTING_PROFILES = "SerializedProfileList";
+    private static final String SETTING_PROFILES = "SerializedProfileList";
+    private static final String SETTING_PERSISTENT_PROFILES = "PersistentProfiles";
 
     private IExtensionHelpers helpers;
     private IBurpExtenderCallbacks callbacks;
@@ -40,6 +41,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JCheckBox enabledCheckBox;
     private JComboBox defaultProfileComboBox;
     private JComboBox logLevelComboBox;
+    private JCheckBox persistProfilesCheckBox;
     private AWSContextMenu contextMenu;
 
     public boolean isEnabled()
@@ -62,21 +64,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.profileKeyIdMap = new HashMap<>();
         this.profileNameMap = new HashMap<>();
 
-        try {
-            final String serializedProfileList = callbacks.loadExtensionSetting(SETTING_PROFILES);
-            if (serializedProfileList != null) {
-                ObjectInputStream objectIn = new ObjectInputStream(new ByteArrayInputStream(helpers.stringToBytes(serializedProfileList)));
-                ArrayList<AWSProfile> profileList = (ArrayList<AWSProfile>) objectIn.readObject();
-                objectIn.close();
-                for (final AWSProfile profile : profileList) {
-                    addProfile(profile);
-                }
-                logger.info(String.format("Loaded %s profiles", profileList.size()));
-            }
-        } catch (Exception exc) {
-            logger.error("Failed to load saved profiles");
-        }
-
         SwingUtilities.invokeLater(new Runnable() {
             @Override
             public void run() {
@@ -89,31 +76,67 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 setupPanel();
                 enabledCheckBox.setSelected(true);
 
+                loadExtensionSettings();
+
                 logger.info("Loaded AWSig");
             }
         });
     }
 
+    private void saveExtensionSettings()
+    {
+        ArrayList<AWSProfile> awsProfiles = new ArrayList<>();
+        if (this.persistProfilesCheckBox.isSelected()) {
+            for (final String name : this.profileNameMap.keySet()) {
+                awsProfiles.add(this.profileNameMap.get(name));
+            }
+        }
+        try {
+            ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
+            ObjectOutputStream objectOut = new ObjectOutputStream(bytesOut);
+            objectOut.writeObject(awsProfiles);
+            objectOut.close();
+            final String serializedProfileList = this.helpers.base64Encode(bytesOut.toByteArray());
+            this.callbacks.saveExtensionSetting(SETTING_PROFILES, serializedProfileList);
+            logger.info(String.format("Saved %d profile(s)", awsProfiles.size()));
+        } catch (Exception exc) {
+            logger.error("Failed to save AWS profiles");
+        }
+
+        this.callbacks.saveExtensionSetting(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected() ? "true" : "false");
+    }
+
+    private void loadExtensionSettings()
+    {
+        try {
+            final String serializedProfileListBase64 = callbacks.loadExtensionSetting(SETTING_PROFILES);
+            if (serializedProfileListBase64 != null) {
+                final byte[] serializedProfileList = helpers.base64Decode(serializedProfileListBase64);
+                ObjectInputStream objectIn = new ObjectInputStream(new ByteArrayInputStream(serializedProfileList));
+                ArrayList<AWSProfile> profileList = (ArrayList<AWSProfile>) objectIn.readObject();
+                objectIn.close();
+                for (final AWSProfile profile : profileList) {
+                    addProfile(profile);
+                }
+                logger.info(String.format("Loaded %s profile(s)", profileList.size()));
+            }
+            else {
+                logger.debug("No saved profiles to load");
+            }
+        } catch (Exception exc) {
+            logger.error("Failed to load saved profiles");
+        }
+
+        final String persistProfiles = this.callbacks.loadExtensionSetting(SETTING_PERSISTENT_PROFILES);
+        if ((persistProfiles != null) && persistProfiles.toLowerCase().equals("true")) {
+            this.persistProfilesCheckBox.setSelected(true);
+        }
+    }
+
     @Override
     public void extensionUnloaded()
     {
-        ArrayList<AWSProfile> awsProfiles = new ArrayList<>();
-        for (final String name : this.profileNameMap.keySet()) {
-            awsProfiles.add(this.profileNameMap.get(name));
-        }
-        if (awsProfiles.size() > 0) {
-            try {
-                ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-                ObjectOutputStream objectOut = new ObjectOutputStream(bytesOut);
-                objectOut.writeObject(awsProfiles);
-                objectOut.close();
-                final String serializedProfileList = this.helpers.bytesToString(bytesOut.toByteArray());
-                this.callbacks.saveExtensionSetting(SETTING_PROFILES, serializedProfileList);
-                logger.info(String.format("Saved %d profiles", awsProfiles.size()));
-            } catch (Exception exc) {
-                logger.error("Failed to save AWS profiles");
-            }
-        }
+        saveExtensionSettings();
         logger.info("Unloading AWSig");
     }
 
@@ -416,7 +439,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         for (int i = 0; i < this.defaultProfileComboBox.getItemCount(); i++) {
             if (this.defaultProfileComboBox.getItemAt(i).equals(defaultProfileName)) {
                 this.defaultProfileComboBox.setSelectedIndex(i);
-                updateStatus("Default profile changed.");
+                //updateStatus("Default profile changed.");
                 return true;
             }
         }
