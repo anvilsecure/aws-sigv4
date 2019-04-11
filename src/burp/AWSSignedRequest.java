@@ -26,8 +26,7 @@ public class AWSSignedRequest {
     private String service;
     private Set<String> signedHeaderSet; // headers to sign
 
-    private PrintWriter inf;
-    private PrintWriter err;
+    private LogWriter logger;
     private IBurpExtenderCallbacks callbacks;
 
     private IExtensionHelpers helpers;
@@ -49,13 +48,12 @@ public class AWSSignedRequest {
                 this.accessKeyId, this.region, this.service, this.amzDate, this.amzDateYMD);
     }
 
-    public AWSSignedRequest(IHttpRequestResponse messageInfo, IBurpExtenderCallbacks callbacks)
+    public AWSSignedRequest(IHttpRequestResponse messageInfo, IBurpExtenderCallbacks callbacks, LogWriter logger)
     {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
 
-        this.inf = new PrintWriter(callbacks.getStdout(), true);
-        this.err = new PrintWriter(callbacks.getStderr(), true);
+        this.logger = logger;
 
         this.helpers = helpers;
         IRequestInfo requestInfo = helpers.analyzeRequest(messageInfo);
@@ -163,7 +161,7 @@ public class AWSSignedRequest {
 
         if (authHeader == null) {
             //throw new IllegalArgumentException("Invalid Authorization header passed to AWSSignedRequest");
-            inf.println("Failed to find auth header");
+            logger.error("Failed to find auth header");
             return false;
         }
 
@@ -176,7 +174,7 @@ public class AWSSignedRequest {
                 Matcher m = credentialRegex.matcher(tokens[i]);
                 if (!m.matches()) {
                     //throw new IllegalArgumentException("Invalid Credential parameter in Authorization header passed to AWSSignedRequest");
-                    inf.println("Credential parameter in authorization header is invalid.");
+                    logger.error("Credential parameter in authorization header is invalid.");
                     return false;
                 }
                 String[] creds = tokens[2].split("/+");
@@ -334,9 +332,9 @@ public class AWSSignedRequest {
             return null;
         }
 
-        //inf.println("===========BEGIN CANONICAL REQUEST==========");
-        //inf.println(canonicalRequest);
-        //inf.println("===========END CANONICAL REQUEST============");
+        logger.debug("===========BEGIN CANONICAL REQUEST==========");
+        logger.debug(canonicalRequest);
+        logger.debug("===========END CANONICAL REQUEST============");
         return DatatypeConverter.printHexBinary(digest.digest(canonicalRequest.getBytes())).toLowerCase();
     }
 
@@ -398,9 +396,9 @@ public class AWSSignedRequest {
                 getCredentialScope(false),
                 getHashedCanonicalRequest()
         );
-        //inf.println("===========BEGIN STRING TO SIGN=============");
-        //inf.println(toSign);
-        //inf.println("===========END STRING TO SIGN===============");
+        logger.debug("===========BEGIN STRING TO SIGN=============");
+        logger.debug(toSign);
+        logger.debug("===========END STRING TO SIGN===============");
 
         final byte[] kDate = getHmac(stringToBytes("AWS4"+secretKey), stringToBytes(this.amzDateYMD));
         final byte[] kRegion = getHmac(kDate, stringToBytes(this.region));

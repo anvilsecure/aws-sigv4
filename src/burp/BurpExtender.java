@@ -19,10 +19,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private IExtensionHelpers helpers;
     private IBurpExtenderCallbacks callbacks;
-    private PrintWriter inf;
-    private PrintWriter err;
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, AWSProfile> profileNameMap; // map accessKeyId to profile
+    private LogWriter logger;
 
     private JPanel panel1;
     private JComboBox profileComboBox;
@@ -40,6 +39,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JButton makeDefaultButton;
     private JCheckBox enabledCheckBox;
     private JComboBox defaultProfileComboBox;
+    private JComboBox logLevelComboBox;
     private AWSContextMenu contextMenu;
 
     public boolean isEnabled()
@@ -57,8 +57,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         callbacks.setExtensionName("AWSig");
         callbacks.registerExtensionStateListener(this);
 
-        this.inf = new PrintWriter(callbacks.getStdout(), true);
-        this.err = new PrintWriter(callbacks.getStderr(), true);
+        this.logger = new LogWriter(callbacks.getStdout(), callbacks.getStderr(), LogWriter.ERROR_LEVEL);
 
         this.profileKeyIdMap = new HashMap<>();
         this.profileNameMap = new HashMap<>();
@@ -72,10 +71,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 for (final AWSProfile profile : profileList) {
                     addProfile(profile);
                 }
-                this.inf.println(String.format("Loaded %s profiles", profileList.size()));
+                logger.info(String.format("Loaded %s profiles", profileList.size()));
             }
         } catch (Exception exc) {
-            this.err.println("Failed to load saved profiles");
+            logger.error("Failed to load saved profiles");
         }
 
         SwingUtilities.invokeLater(new Runnable() {
@@ -90,7 +89,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 setupPanel();
                 enabledCheckBox.setSelected(true);
 
-                inf.println("Loaded AWSig");
+                logger.info("Loaded AWSig");
             }
         });
     }
@@ -110,12 +109,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 objectOut.close();
                 final String serializedProfileList = this.helpers.bytesToString(bytesOut.toByteArray());
                 this.callbacks.saveExtensionSetting(SETTING_PROFILES, serializedProfileList);
-                this.inf.println(String.format("Saved %d profiles", awsProfiles.size()));
+                logger.info(String.format("Saved %d profiles", awsProfiles.size()));
             } catch (Exception exc) {
-                this.err.println("Failed to save AWS profiles");
+                logger.error("Failed to save AWS profiles");
             }
         }
-        this.inf.println("Unloading AWSig");
+        logger.info("Unloading AWSig");
     }
 
     public List<JMenuItem> getContextMenuItems() {
@@ -165,8 +164,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private AWSProfile profileFromCurrentForm()
     {
-        return new AWSProfile(nameTextField.getText(), accessKeyIdTextField.getText(),
-            secretKeyTextField.getText(), regionTextField.getText(), regionCheckBox.isSelected(), serviceTextField.getText(),
+        return new AWSProfile(nameTextField.getText().trim(), accessKeyIdTextField.getText().trim(),
+            secretKeyTextField.getText().trim(), regionTextField.getText().trim(), regionCheckBox.isSelected(), serviceTextField.getText().trim(),
             serviceCheckBox.isSelected(),true);
     }
 
@@ -211,6 +210,31 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         });
 
+        class LogLevelComboBoxItem
+        {
+            final private int logLevel;
+            final private String levelName;
+            public LogLevelComboBoxItem(final int logLevel)
+            {
+                this.logLevel = logLevel;
+                this.levelName = LogWriter.levelNameFromInt(logLevel);
+            }
+
+            @Override
+            public String toString() { return this.levelName; }
+        }
+        this.logLevelComboBox.addItem(new LogLevelComboBoxItem(LogWriter.DEBUG_LEVEL));
+        this.logLevelComboBox.addItem(new LogLevelComboBoxItem(LogWriter.INFO_LEVEL));
+        this.logLevelComboBox.addItem(new LogLevelComboBoxItem(LogWriter.ERROR_LEVEL));
+        this.logLevelComboBox.addItem(new LogLevelComboBoxItem(LogWriter.FATAL_LEVEL));
+        this.logLevelComboBox.setSelectedIndex(logger.getLevel());
+
+        this.logLevelComboBox.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent actionEvent) {
+                logger.setLevel(((LogLevelComboBoxItem)logLevelComboBox.getSelectedItem()).logLevel);
+            }
+        });
     }
 
     private void updateStatus(final String status)
@@ -334,12 +358,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 return;
             }
         }
-        inf.println("Importing AWS credentials from: " + credPath.toString());
+        logger.info("Importing AWS credentials from: " + credPath);
 
         int count = 0;
         for (AWSProfile profile : AWSProfile.fromCredentialPath(credPath)) {
             if (addProfile(profile)) {
-                inf.println("Imported profile: "+profile);
+                logger.info("Imported profile: "+profile);
                 count += 1;
             }
         }
@@ -368,13 +392,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private void printHeaders(IRequestInfo request)
     {
-        inf.println("Request Parameters");
+        logger.debug("Request Parameters");
         for (IParameter param : request.getParameters()) {
-            inf.println(String.format("%s = %s", param.getName(), param.getValue()));
+            logger.debug(String.format("%s = %s", param.getName(), param.getValue()));
         }
-        inf.println("Request Headers");
+        logger.debug("Request Headers");
         for (String header : request.getHeaders()) {
-            inf.println("+"+header);
+            logger.debug("+"+header);
         }
     }
 
@@ -407,12 +431,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             if (isAwsRequest(request)) {
 
                 // use default profile, if there is one. else, match profile based on access key id in the request
-                AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this.callbacks);
+                AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this.callbacks, this.logger);
                 AWSProfile profile = this.profileNameMap.get(getDefaultProfileName());
                 if (profile == null) {
                     profile = this.profileKeyIdMap.get(signedRequest.getAccessKeyId());
                     if (profile == null) {
-                        inf.println("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
+                        logger.info("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
                         return;
                     }
                 }
@@ -420,7 +444,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 signedRequest.applyProfile(profile);
                 byte[] requestBytes = signedRequest.getSignedRequestBytes(profile.secretKey);
                 if (requestBytes != null) {
-                    inf.println("Signed request with profile: "+profile);
+                    logger.info("Signed request with profile: "+profile);
                     messageInfo.setRequest(requestBytes);
                 }
             }
