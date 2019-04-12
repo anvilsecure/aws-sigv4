@@ -3,7 +3,6 @@ package burp;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.xml.bind.DatatypeConverter;
-import java.io.PrintWriter;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
@@ -27,8 +26,6 @@ public class AWSSignedRequest {
     private Set<String> signedHeaderSet; // headers to sign
 
     private LogWriter logger;
-    private IBurpExtenderCallbacks callbacks;
-
     private IExtensionHelpers helpers;
     private IRequestInfo request;
     private byte[] requestBytes;
@@ -48,17 +45,9 @@ public class AWSSignedRequest {
                 this.accessKeyId, this.region, this.service, this.amzDate, this.amzDateYMD);
     }
 
-    public AWSSignedRequest(IHttpRequestResponse messageInfo, IBurpExtenderCallbacks callbacks, LogWriter logger)
+    private void init(byte[] requestBytes)
     {
-        this.helpers = callbacks.getHelpers();
-        this.callbacks = callbacks;
-
-        this.logger = logger;
-
-        this.helpers = helpers;
-        IRequestInfo requestInfo = helpers.analyzeRequest(messageInfo);
-        this.originalUrl = requestInfo.getUrl();
-        this.requestBytes = messageInfo.getRequest();
+        this.requestBytes = requestBytes;
         this.request = helpers.analyzeRequest(requestBytes);
         this.signedHeaderSet = new HashSet<String>();
         // make sure required host header is part of signature
@@ -68,6 +57,25 @@ public class AWSSignedRequest {
         // parameters with GET requests but this will be robust
         parseAuthorizationQueryString();
         parseAuthorizationHeader();
+    }
+
+    public AWSSignedRequest(URL originalUrl, byte[] requestBytes, IExtensionHelpers helpers, LogWriter logger)
+    {
+        this.helpers = helpers;
+        this.logger = logger;
+
+        this.originalUrl = originalUrl;
+        init(requestBytes);
+    }
+
+    public AWSSignedRequest(IHttpRequestResponse messageInfo, IExtensionHelpers helpers, LogWriter logger)
+    {
+        this.helpers = helpers;
+        this.logger = logger;
+
+        IRequestInfo requestInfo = helpers.analyzeRequest(messageInfo);
+        this.originalUrl = requestInfo.getUrl();
+        init(messageInfo.getRequest());
     }
 
     private IRequestInfo getRequestInfo()
@@ -133,7 +141,7 @@ public class AWSSignedRequest {
                 this.service = creds[3];
             }
             else if (name.toLowerCase().equals("x-amz-signedheaders")) {
-                for (String header : value.split("[\\s,]+")) {
+                for (String header : value.split("[\\s;]+")) {
                     this.signedHeaderSet.add(header.toLowerCase());
                 }
             }
@@ -417,7 +425,7 @@ public class AWSSignedRequest {
     /*
     update URL parameters for GET requests
     */
-    private boolean updateUrlParameters(String secretKey)
+    private boolean updateQueryString(String secretKey)
     {
         boolean updatedCredential = false;
         boolean updatedDate = false;
@@ -432,15 +440,15 @@ public class AWSSignedRequest {
                 updatedCredential = true;
             }
             else if (name.toLowerCase().equals("x-amz-date")) {
-                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, this.amzDateYMD, IParameter.PARAM_URL));
+                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, this.amzDate, IParameter.PARAM_URL));
                 updatedDate = true;
             }
-            else if (name.toLowerCase().equals("signature")) {
+            else if (name.toLowerCase().equals("x-amz-signature")) {
                 this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getSignature(secretKey), IParameter.PARAM_URL));
                 updatedSignature = true;
             }
             else if (name.toLowerCase().equals("x-amz-signedheaders")) {
-                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, helpers.urlEncode(getSignedHeadersString()), IParameter.PARAM_URL));
+                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getSignedHeadersString(), IParameter.PARAM_URL));
                 updatedSignedHeaders = true;
             }
         }
@@ -456,7 +464,7 @@ public class AWSSignedRequest {
             this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Signature", getSignature(secretKey), IParameter.PARAM_URL));
         }
         if (!updatedSignedHeaders) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", helpers.urlEncode(getSignedHeadersString()), IParameter.PARAM_URL));
+            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", getSignedHeadersString(), IParameter.PARAM_URL));
         }
 
         // update request object since we modified the parameters
@@ -496,8 +504,9 @@ public class AWSSignedRequest {
             final String body = new String(requestBytes, request.getBodyOffset(), requestBytes.length - request.getBodyOffset(), StandardCharsets.UTF_8);
             return this.helpers.buildHttpMessage(headers, body.getBytes());
         }
+
         // for non-POST requests, update signature in query string
-        if (updateUrlParameters(secretKey)) {
+        if (updateQueryString(secretKey)) {
             return this.helpers.buildHttpMessage(this.request.getHeaders(), null);
         }
         return null;

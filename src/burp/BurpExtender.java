@@ -68,6 +68,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             logger.setLevel(Integer.parseInt(setting));
         }
 
+        callbacks.registerMessageEditorTabFactory(new AWSMessageEditorTabFactory(this, callbacks, logger));
+
         this.profileKeyIdMap = new HashMap<>();
         this.profileNameMap = new HashMap<>();
 
@@ -411,7 +413,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     /*
     Check if the request is for AWS. Can be POST or GET request.
     */
-    private boolean isAwsRequest(IRequestInfo request) {
+    public static boolean isAwsRequest(IRequestInfo request) {
         // all AWS requests require x-amz-date either in the query string or as a header
         for (String header : request.getHeaders()) {
             if (header.toLowerCase().startsWith("x-amz-date:")) {
@@ -463,6 +465,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return false;
     }
 
+    public AWSProfile getSigningProfile(final String requestAccessKeyId)
+    {
+        AWSProfile profile = this.profileNameMap.get(getDefaultProfileName());
+        if (profile == null) {
+            profile = this.profileKeyIdMap.get(requestAccessKeyId);
+        }
+        return profile;
+    }
+
     @Override
     public void processHttpMessage(int toolFlag, boolean messageIsRequest, IHttpRequestResponse messageInfo)
     {
@@ -471,14 +482,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             if (isAwsRequest(request)) {
 
                 // use default profile, if there is one. else, match profile based on access key id in the request
-                AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this.callbacks, this.logger);
-                AWSProfile profile = this.profileNameMap.get(getDefaultProfileName());
+                AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this.helpers, this.logger);
+                AWSProfile profile = getSigningProfile(signedRequest.getAccessKeyId());
                 if (profile == null) {
-                    profile = this.profileKeyIdMap.get(signedRequest.getAccessKeyId());
-                    if (profile == null) {
-                        logger.info("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
-                        return;
-                    }
+                    logger.info("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
+                    return;
                 }
 
                 signedRequest.applyProfile(profile);
