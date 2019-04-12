@@ -17,6 +17,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 {
     private static final String SETTING_PROFILES = "SerializedProfileList";
     private static final String SETTING_PERSISTENT_PROFILES = "PersistentProfiles";
+    private static final String SETTING_EXTENSION_ENABLED = "ExtensionEnabled";
+    private static final String SETTING_DEFAULT_PROFILE_NAME = "DefaultProfileName";
+    private static final String SETTING_LOG_LEVEL = "LogLevel";
 
     private IExtensionHelpers helpers;
     private IBurpExtenderCallbacks callbacks;
@@ -60,6 +63,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         callbacks.registerExtensionStateListener(this);
 
         this.logger = new LogWriter(callbacks.getStdout(), callbacks.getStderr(), LogWriter.ERROR_LEVEL);
+        String setting = this.callbacks.loadExtensionSetting(SETTING_LOG_LEVEL);
+        if (setting != null) {
+            logger.setLevel(Integer.parseInt(setting));
+        }
 
         this.profileKeyIdMap = new HashMap<>();
         this.profileNameMap = new HashMap<>();
@@ -104,6 +111,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
 
         this.callbacks.saveExtensionSetting(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected() ? "true" : "false");
+        this.callbacks.saveExtensionSetting(SETTING_EXTENSION_ENABLED, this.enabledCheckBox.isSelected() ? "true" : "false");
+        this.callbacks.saveExtensionSetting(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
+        this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(logger.getLevel()));
     }
 
     private void loadExtensionSettings()
@@ -127,10 +137,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             logger.error("Failed to load saved profiles");
         }
 
-        final String persistProfiles = this.callbacks.loadExtensionSetting(SETTING_PERSISTENT_PROFILES);
-        if ((persistProfiles != null) && persistProfiles.toLowerCase().equals("true")) {
+        String setting = this.callbacks.loadExtensionSetting(SETTING_PERSISTENT_PROFILES);
+        if ((setting != null) && setting.toLowerCase().equals("true")) {
             this.persistProfilesCheckBox.setSelected(true);
         }
+        setting = this.callbacks.loadExtensionSetting(SETTING_EXTENSION_ENABLED);
+        if ((setting != null) && setting.toLowerCase().equals("true")) {
+            this.enabledCheckBox.setSelected(true);
+        }
+        setDefaultProfileName(this.callbacks.loadExtensionSetting(SETTING_DEFAULT_PROFILE_NAME));
     }
 
     @Override
@@ -436,11 +451,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private boolean setDefaultProfileName(final String defaultProfileName)
     {
-        for (int i = 0; i < this.defaultProfileComboBox.getItemCount(); i++) {
-            if (this.defaultProfileComboBox.getItemAt(i).equals(defaultProfileName)) {
-                this.defaultProfileComboBox.setSelectedIndex(i);
-                //updateStatus("Default profile changed.");
-                return true;
+        if (defaultProfileName != null) {
+            for (int i = 0; i < this.defaultProfileComboBox.getItemCount(); i++) {
+                if (this.defaultProfileComboBox.getItemAt(i).equals(defaultProfileName)) {
+                    this.defaultProfileComboBox.setSelectedIndex(i);
+                    //updateStatus("Default profile changed.");
+                    return true;
+                }
             }
         }
         return false;
