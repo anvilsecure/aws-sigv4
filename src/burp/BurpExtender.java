@@ -13,13 +13,14 @@ import java.nio.file.Path;
 import java.util.List;
 
 
-public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener
+public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory
 {
     private static final String SETTING_PROFILES = "SerializedProfileList";
     private static final String SETTING_PERSISTENT_PROFILES = "PersistentProfiles";
     private static final String SETTING_EXTENSION_ENABLED = "ExtensionEnabled";
     private static final String SETTING_DEFAULT_PROFILE_NAME = "DefaultProfileName";
     private static final String SETTING_LOG_LEVEL = "LogLevel";
+    private static final String SETTING_CUSTOM_HEADERS = "CustomHeaders";
 
     private IExtensionHelpers helpers;
     private IBurpExtenderCallbacks callbacks;
@@ -45,6 +46,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JComboBox defaultProfileComboBox;
     private JComboBox logLevelComboBox;
     private JCheckBox persistProfilesCheckBox;
+    private JTextArea customHeadersTextArea;
     private AWSContextMenu contextMenu;
 
     public boolean isEnabled()
@@ -68,8 +70,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             logger.setLevel(Integer.parseInt(setting));
         }
 
-        callbacks.registerMessageEditorTabFactory(new AWSMessageEditorTabFactory(this, callbacks, logger));
-
         this.profileKeyIdMap = new HashMap<>();
         this.profileNameMap = new HashMap<>();
 
@@ -81,6 +81,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
                 contextMenu = new AWSContextMenu(BurpExtender.this);
                 callbacks.registerContextMenuFactory(contextMenu);
+                callbacks.registerMessageEditorTabFactory(BurpExtender.this);
 
                 setupPanel();
                 enabledCheckBox.setSelected(true);
@@ -116,6 +117,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.callbacks.saveExtensionSetting(SETTING_EXTENSION_ENABLED, this.enabledCheckBox.isSelected() ? "true" : "false");
         this.callbacks.saveExtensionSetting(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(logger.getLevel()));
+        this.callbacks.saveExtensionSetting(SETTING_CUSTOM_HEADERS, String.join("\n", getCustomHeadersFromUI()));
     }
 
     private void loadExtensionSettings()
@@ -148,6 +150,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             this.enabledCheckBox.setSelected(true);
         }
         setDefaultProfileName(this.callbacks.loadExtensionSetting(SETTING_DEFAULT_PROFILE_NAME));
+        final String customHeaderText = this.callbacks.loadExtensionSetting(SETTING_CUSTOM_HEADERS);
+        if (customHeaderText != null) {
+            this.customHeadersTextArea.setText(customHeaderText);
+        }
+    }
+
+    @Override
+    public IMessageEditorTab createNewInstance(IMessageEditorController controller, boolean editable) {
+        return new AWSMessageEditorTab(controller, editable, this, this.callbacks, this.logger);
     }
 
     @Override
@@ -421,6 +432,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         }
 
+        // check for query string parameters
         for (IParameter param : request.getParameters()) {
             if (param.getName().toLowerCase().equals("x-amz-date")) {
                 return true;
@@ -474,6 +486,37 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return profile;
     }
 
+    /* get the additional headers specified in the UI */
+    private ArrayList<String> getCustomHeadersFromUI()
+    {
+        ArrayList<String> headers = new ArrayList<>();
+        for (String header : this.customHeadersTextArea.getText().split("[\\r\\n]+")) {
+            header = header.trim();
+            if (header.length() > 0) {
+                headers.add(header);
+            }
+        }
+        return headers;
+    }
+
+    /*
+    apply settings to a signed request and return applied profile
+     */
+    public AWSProfile customizeSignedRequest(AWSSignedRequest signedRequest)
+    {
+        AWSProfile profile = getSigningProfile(signedRequest.getAccessKeyId());
+        if (profile == null) {
+            logger.info("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
+            return null;
+        }
+
+        // add any user-specified, custom HTTP headers
+        signedRequest.addSignedHeaders(getCustomHeadersFromUI());
+
+        signedRequest.applyProfile(profile);
+        return profile;
+    }
+
     @Override
     public void processHttpMessage(int toolFlag, boolean messageIsRequest, IHttpRequestResponse messageInfo)
     {
@@ -483,14 +526,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
                 // use default profile, if there is one. else, match profile based on access key id in the request
                 AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this.helpers, this.logger);
-                AWSProfile profile = getSigningProfile(signedRequest.getAccessKeyId());
+                final AWSProfile profile = customizeSignedRequest(signedRequest);
                 if (profile == null) {
-                    logger.info("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
+                    logger.error("Failed to apply custom settings to signed request");
                     return;
                 }
 
-                signedRequest.applyProfile(profile);
-                byte[] requestBytes = signedRequest.getSignedRequestBytes(profile.secretKey);
+                byte[] requestBytes = signedRequest.getSignedRequestBytes();
                 if (requestBytes != null) {
                     logger.info("Signed request with profile: "+profile);
                     messageInfo.setRequest(requestBytes);

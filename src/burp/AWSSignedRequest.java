@@ -21,6 +21,7 @@ See documentation here: https://docs.aws.amazon.com/general/latest/gr/sigv4_sign
 public class AWSSignedRequest {
     private final String algorithm = "AWS4-HMAC-SHA256"; // we only compute the SHA256
     private String accessKeyId;
+    private String secretKey;
     private String region;
     private String service;
     private Set<String> signedHeaderSet; // headers to sign
@@ -105,6 +106,7 @@ public class AWSSignedRequest {
         }
         // this is a NOP unless using a default profile
         this.setAccessKeyId(profile.accessKeyId);
+        this.secretKey = profile.secretKey;
     }
 
     /*
@@ -168,8 +170,6 @@ public class AWSSignedRequest {
         }
 
         if (authHeader == null) {
-            //throw new IllegalArgumentException("Invalid Authorization header passed to AWSSignedRequest");
-            logger.error("Failed to find auth header");
             return false;
         }
 
@@ -181,7 +181,6 @@ public class AWSSignedRequest {
                 // extract fields from Credential parameter
                 Matcher m = credentialRegex.matcher(tokens[i]);
                 if (!m.matches()) {
-                    //throw new IllegalArgumentException("Invalid Credential parameter in Authorization header passed to AWSSignedRequest");
                     logger.error("Credential parameter in authorization header is invalid.");
                     return false;
                 }
@@ -209,6 +208,23 @@ public class AWSSignedRequest {
         dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
         this.amzDate = dateFormat.format(new Date());
         this.amzDateYMD = this.amzDate.substring(0, 8);
+    }
+
+    /* use this method to add additional signed headers. no attempt is made to prevent
+    adding duplicate headers.
+    */
+    public void addSignedHeaders(final List<String> newHeaders)
+    {
+        if (newHeaders.size() > 0) {
+            ArrayList<String> headers = (ArrayList<String>) this.request.getHeaders();
+            for (final String header : newHeaders) {
+                logger.debug("Adding custom signed header: "+header);
+                this.signedHeaderSet.add(splitHttpHeader(header)[0].toLowerCase());
+                headers.add(header);
+            }
+            this.requestBytes = this.helpers.buildHttpMessage(headers, this.requestBytes);
+            this.request = helpers.analyzeRequest(this.requestBytes);
+        }
     }
 
     private String getCanonicalQueryString()
@@ -473,14 +489,14 @@ public class AWSSignedRequest {
     }
 
 
-    public byte[] getSignedRequestBytes(String secretKey)
+    public byte[] getSignedRequestBytes()
     {
         // get current timestamp before signing
         updateAmzDate();
         if (this.request.getMethod().toUpperCase().equals("POST")) {
             // update headers and preserve order. replace authorization header with new signature.
             ArrayList<String> headers = new ArrayList<>(this.request.getHeaders());
-            final String newAuthHeader = getAuthorizationHeader(secretKey);
+            final String newAuthHeader = getAuthorizationHeader(this.secretKey);
             boolean authUpdated = false;
             boolean dateUpdated = false;
             for (int i = 0; i < headers.size(); i++) {
@@ -506,7 +522,7 @@ public class AWSSignedRequest {
         }
 
         // for non-POST requests, update signature in query string
-        if (updateQueryString(secretKey)) {
+        if (updateQueryString(this.secretKey)) {
             return this.helpers.buildHttpMessage(this.request.getHeaders(), null);
         }
         return null;

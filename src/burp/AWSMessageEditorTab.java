@@ -55,9 +55,12 @@ public class AWSMessageEditorTab implements IMessageEditorTab
             final IHttpService service = this.controller.getHttpService();
             final URL url = new URL(service.getProtocol(), service.getHost(), service.getPort(), "");
             AWSSignedRequest signedRequest = new AWSSignedRequest(url, this.content, this.helpers, this.logger);
-            final AWSProfile profile = this.burp.getSigningProfile(signedRequest.getAccessKeyId());
-            signedRequest.applyProfile(profile);
-            this.messageTextEditor.setText(signedRequest.getSignedRequestBytes(profile.secretKey));
+            final AWSProfile profile = this.burp.customizeSignedRequest(signedRequest);
+            if (profile == null) {
+                this.messageTextEditor.setText(this.helpers.stringToBytes("No profile found for keyId: "+signedRequest.getAccessKeyId()+". Either add it or set a default profile."));
+                return;
+            }
+            this.messageTextEditor.setText(signedRequest.getSignedRequestBytes());
             return;
         } catch (Exception exc) {
         }
