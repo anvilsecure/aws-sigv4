@@ -418,6 +418,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 count += 1;
             }
         }
+
+        // try to import creds from environment variables
+        AWSProfile profile = AWSProfile.fromEnvironment();
+        if (profile != null) {
+            if (addProfile(profile)) {
+                logger.info("Imported profile: "+profile);
+                count += 1;
+            }
+        }
         updateStatus(String.format("Imported %d profiles", count));
     }
 

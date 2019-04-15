@@ -30,6 +30,18 @@ public class AWSProfile implements Serializable {
         this.isActive = isActive;
     }
 
+    public static AWSProfile fromEnvironment()
+    {
+        final String envAccessKeyId = System.getenv("AWS_ACCESS_KEY_ID");
+        if (envAccessKeyId != null) {
+            final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
+            if (envSecretKey != null) {
+                return new AWSProfile("ENV", envAccessKeyId, envSecretKey, "", true, "", true, true);
+            }
+        }
+        return null;
+    }
+
     public static ArrayList<AWSProfile> fromCredentialPath(Path path)
     {
         String profileName = "";
