@@ -21,6 +21,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String SETTING_DEFAULT_PROFILE_NAME = "DefaultProfileName";
     private static final String SETTING_LOG_LEVEL = "LogLevel";
     private static final String SETTING_CUSTOM_HEADERS = "CustomHeaders";
+    private static final String SETTING_INSCOPE_ONLY = "InScopeOnly";
 
     private IExtensionHelpers helpers;
     private IBurpExtenderCallbacks callbacks;
@@ -47,6 +48,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JComboBox logLevelComboBox;
     private JCheckBox persistProfilesCheckBox;
     private JTextArea customHeadersTextArea;
+    private JCheckBox inScopeOnlyCheckBox;
     private AWSContextMenu contextMenu;
 
     public boolean isEnabled()
@@ -84,7 +86,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 callbacks.registerMessageEditorTabFactory(BurpExtender.this);
 
                 setupPanel();
-                enabledCheckBox.setSelected(true);
 
                 loadExtensionSettings();
 
@@ -118,6 +119,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.callbacks.saveExtensionSetting(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(logger.getLevel()));
         this.callbacks.saveExtensionSetting(SETTING_CUSTOM_HEADERS, String.join("\n", getCustomHeadersFromUI()));
+        this.callbacks.saveExtensionSetting(SETTING_INSCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected() ? "true" : "false");
     }
 
     private void loadExtensionSettings()
@@ -146,13 +148,17 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             this.persistProfilesCheckBox.setSelected(true);
         }
         setting = this.callbacks.loadExtensionSetting(SETTING_EXTENSION_ENABLED);
-        if ((setting != null) && setting.toLowerCase().equals("true")) {
+        if ((setting == null) || setting.toLowerCase().equals("true")) {
             this.enabledCheckBox.setSelected(true);
         }
         setDefaultProfileName(this.callbacks.loadExtensionSetting(SETTING_DEFAULT_PROFILE_NAME));
         final String customHeaderText = this.callbacks.loadExtensionSetting(SETTING_CUSTOM_HEADERS);
         if (customHeaderText != null) {
             this.customHeadersTextArea.setText(customHeaderText);
+        }
+        setting = this.callbacks.loadExtensionSetting(SETTING_INSCOPE_ONLY);
+        if ((setting != null) && setting.toLowerCase().equals("true")) {
+            this.inScopeOnlyCheckBox.setSelected(true);
         }
     }
 
@@ -515,7 +521,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     {
         AWSProfile profile = getSigningProfile(signedRequest.getAccessKeyId());
         if (profile == null) {
-            logger.info("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
+            logger.error("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
             return null;
         }
 
@@ -531,6 +537,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     {
         if (messageIsRequest && enabledCheckBox.isSelected()) {
             IRequestInfo request = helpers.analyzeRequest(messageInfo);
+
+            // check request scope
+            if (this.inScopeOnlyCheckBox.isSelected() && !this.callbacks.isInScope(request.getUrl())) {
+                logger.debug("Skipping out of scope request: "+request.getUrl());
+                return;
+            }
+
             if (isAwsRequest(request)) {
 
                 // use default profile, if there is one. else, match profile based on access key id in the request
