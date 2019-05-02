@@ -52,6 +52,7 @@ public class AWSSignedRequest {
         this.request = helpers.analyzeRequest(requestBytes);
         this.signedHeaderSet = new HashSet<String>();
         // make sure required host header is part of signature
+        // TODO: for http/2, we need authority header
         this.signedHeaderSet.add("host");
 
         // attempt to parse header and query string for all requests. we only expect to see the query string
@@ -206,8 +207,8 @@ public class AWSSignedRequest {
     {
         final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'");
         dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-        this.amzDate = dateFormat.format(new Date());
-        this.amzDateYMD = this.amzDate.substring(0, 8);
+        this.amzDate = dateFormat.format(new Date()); // full date and time for signing
+        this.amzDateYMD = this.amzDate.substring(0, 8); // date for credential param
     }
 
     /* use this method to add additional signed headers. no attempt is made to prevent
@@ -341,7 +342,7 @@ public class AWSSignedRequest {
 
     private String getHashedCanonicalRequest()
     {
-        final String canonicalRequest = String.format("%s\n%s\n%s\n%s\n%s\n%s",
+        final String canonicalRequest = String.join("\n",
                 this.request.getMethod().toUpperCase(),
                 getCanonicalUri(),
                 getCanonicalQueryString(),
@@ -412,14 +413,14 @@ public class AWSSignedRequest {
         return String.format("%s/%s/%s/aws4_request", this.amzDateYMD, this.region, this.service);
     }
 
-    private String getSignature(String secretKey)
+    private String getSignature(final String secretKey)
     {
-        final String toSign = String.format("%s\n%s\n%s\n%s",
+        final String toSign = String.join("\n",
                 this.algorithm.toUpperCase(),
                 this.amzDate,
                 getCredentialScope(false),
-                getHashedCanonicalRequest()
-        );
+                getHashedCanonicalRequest());
+
         logger.debug("===========BEGIN STRING TO SIGN=============");
         logger.debug(toSign);
         logger.debug("===========END STRING TO SIGN===============");
@@ -431,7 +432,8 @@ public class AWSSignedRequest {
         return DatatypeConverter.printHexBinary(getHmac(kSigning, stringToBytes(toSign))).toLowerCase();
     }
 
-    private String getAuthorizationHeader(String secretKey)
+    // get the Authorization header for the request. this contains the signature using current timestamp
+    private String getAuthorizationHeader(final String secretKey)
     {
         final String signature = getSignature(secretKey);
         return String.format("Authorization: %s Credential=%s, SignedHeaders=%s, Signature=%s",
@@ -439,7 +441,7 @@ public class AWSSignedRequest {
     }
 
     /*
-    update URL parameters for GET requests
+    update required URL parameters for signed GET requests
     */
     private boolean updateQueryString(String secretKey)
     {
@@ -491,12 +493,13 @@ public class AWSSignedRequest {
 
     public byte[] getSignedRequestBytes()
     {
-        // get current timestamp before signing
+        // update timestamp before signing. will be good for 15 minutes
         updateAmzDate();
         if (this.request.getMethod().toUpperCase().equals("POST")) {
             // update headers and preserve order. replace authorization header with new signature.
             ArrayList<String> headers = new ArrayList<>(this.request.getHeaders());
             final String newAuthHeader = getAuthorizationHeader(this.secretKey);
+            final String newAmzDateHeader = "X-Amz-Date: " + this.amzDate;
             boolean authUpdated = false;
             boolean dateUpdated = false;
             for (int i = 0; i < headers.size(); i++) {
@@ -504,7 +507,6 @@ public class AWSSignedRequest {
                     headers.set(i, newAuthHeader);
                     authUpdated = true;
                 } else if (headers.get(i).toLowerCase().startsWith("x-amz-date:")) {
-                    final String newAmzDateHeader = "X-Amz-Date: " + this.amzDate;
                     headers.set(i, newAmzDateHeader);
                     dateUpdated = true;
                 }
@@ -515,13 +517,13 @@ public class AWSSignedRequest {
                 headers.add(newAuthHeader);
             }
             if (!dateUpdated) {
-                headers.add(this.amzDate);
+                headers.add(newAmzDateHeader);
             }
             final String body = new String(requestBytes, request.getBodyOffset(), requestBytes.length - request.getBodyOffset(), StandardCharsets.UTF_8);
             return this.helpers.buildHttpMessage(headers, body.getBytes());
         }
 
-        // for non-POST requests, update signature in query string
+        // for non-POST requests, update signature in query string. this will almost always be a GET request.
         if (updateQueryString(this.secretKey)) {
             return this.helpers.buildHttpMessage(this.request.getHeaders(), null);
         }

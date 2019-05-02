@@ -211,7 +211,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public String getTabCaption()
     {
-        return "AWSig";
+        return "SigV4";
     }
 
     @Override
@@ -294,6 +294,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         });
     }
 
+    // display status message in UI
     private void updateStatus(final String status)
     {
         this.statusLabel.setText(status);
@@ -405,7 +406,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         import creds from well-known path. if path does not exist, prompt user. last imported profile
         will become the default.
         */
-        Path credPath = Paths.get(System.getProperty("user.home") + "/.aws/credentials");
+        Path credPath = Paths.get(System.getProperty("user.home"),".aws", "credentials");
         if (!Files.exists(credPath)) {
             JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
             chooser.setFileHidingEnabled(false);
@@ -440,7 +441,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     Check if the request is for AWS. Can be POST or GET request.
     */
     public static boolean isAwsRequest(IRequestInfo request) {
-        // all AWS requests require x-amz-date either in the query string or as a header
+        // all AWS requests require x-amz-date either in the query string or as a header.Date can be used but is not unique enough.
+        // https://docs.aws.amazon.com/general/latest/gr/sigv4-date-handling.html
         for (String header : request.getHeaders()) {
             if (header.toLowerCase().startsWith("x-amz-date:")) {
                 return true;
@@ -471,9 +473,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private String getDefaultProfileName()
     {
-        final String defaultProfileName = (String)this.defaultProfileComboBox.getSelectedItem();
-        if ((defaultProfileName == null) || (defaultProfileName.equals(""))) {
-            return "";
+        String defaultProfileName = (String)this.defaultProfileComboBox.getSelectedItem();
+        if (defaultProfileName == null) {
+            defaultProfileName = "";
         }
         return defaultProfileName;
     }
