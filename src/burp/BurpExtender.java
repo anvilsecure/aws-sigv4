@@ -78,15 +78,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         SwingUtilities.invokeLater(new Runnable() {
             @Override
             public void run() {
-                callbacks.registerHttpListener(BurpExtender.this);
                 callbacks.addSuiteTab(BurpExtender.this);
+                callbacks.registerHttpListener(BurpExtender.this);
 
                 contextMenu = new AWSContextMenu(BurpExtender.this);
                 callbacks.registerContextMenuFactory(contextMenu);
                 callbacks.registerMessageEditorTabFactory(BurpExtender.this);
 
                 setupPanel();
-
                 loadExtensionSettings();
 
                 logger.info("Loaded AWSig");

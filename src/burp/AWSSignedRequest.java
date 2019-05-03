@@ -33,6 +33,7 @@ public class AWSSignedRequest {
     private String amzDate; // UTC date string for X-Amz-Date header
     private String amzDateYMD;
     private URL originalUrl;
+    private boolean signatureInHeaders = false;
 
     private static Pattern credentialRegex = Pattern.compile("^Credential=[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9=]{1,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
@@ -58,7 +59,7 @@ public class AWSSignedRequest {
         // attempt to parse header and query string for all requests. we only expect to see the query string
         // parameters with GET requests but this will be robust
         parseAuthorizationQueryString();
-        parseAuthorizationHeader();
+        signatureInHeaders = parseAuthorizationHeader();
     }
 
     public AWSSignedRequest(URL originalUrl, byte[] requestBytes, IExtensionHelpers helpers, LogWriter logger)
@@ -271,11 +272,15 @@ public class AWSSignedRequest {
 
     private String getCanonicalUri()
     {
-        // for services other than s3, URI must be normalized by removing relative elements and duplicate path separators
-        if (this.service.toLowerCase().equals("s3")) {
-            return this.originalUrl.getPath();
+        String uri = this.originalUrl.getPath();
+        if (!this.service.toLowerCase().equals("s3")) {
+            // for services other than s3, URI must be normalized by removing relative elements and duplicate path separators
+            uri = uri.replaceAll("[/]{2,}", "/");
         }
-        return this.originalUrl.getPath().replaceAll("[/]{2,}", "/");
+        if (uri.equals("")) {
+            uri = "/";
+        }
+        return uri;
     }
 
     private String getCanonicalHeaders()
@@ -322,8 +327,20 @@ public class AWSSignedRequest {
         return String.join(";", signedHeadersArray);
     }
 
+    private String getPayload()
+    {
+        String payload = "";
+        if (this.request.getBodyOffset() < this.requestBytes.length) {
+            payload = new String(this.requestBytes, this.request.getBodyOffset(), this.requestBytes.length - this.request.getBodyOffset(), StandardCharsets.UTF_8);
+        }
+        return payload;
+    }
+
     private String getPayloadHash()
     {
+        if (this.service.toLowerCase().equals("s3")) {
+            return "UNSIGNED-PAYLOAD";
+        }
         // hash payload (POST body)
         MessageDigest digest;
         try {
@@ -333,10 +350,7 @@ public class AWSSignedRequest {
         }
 
         // if request has a body, hash it. if no body, use hash of empty string
-        String payload = "";
-        if (request.getBodyOffset() < requestBytes.length) {
-            payload = new String(requestBytes, request.getBodyOffset(), requestBytes.length - request.getBodyOffset(), StandardCharsets.UTF_8);
-        }
+        String payload = getPayload();
         return DatatypeConverter.printHexBinary(digest.digest(payload.getBytes())).toLowerCase();
     }
 
@@ -495,7 +509,10 @@ public class AWSSignedRequest {
     {
         // update timestamp before signing. will be good for 15 minutes
         updateAmzDate();
-        if (this.request.getMethod().toUpperCase().equals("POST")) {
+
+        final String method = this.request.getMethod().toUpperCase();
+        // attempt to keep signature in original location (url or headers)
+        if (this.signatureInHeaders) {//xxx method.equals("POST") || method.equals("PUT")) {
             // update headers and preserve order. replace authorization header with new signature.
             ArrayList<String> headers = new ArrayList<>(this.request.getHeaders());
             final String newAuthHeader = getAuthorizationHeader(this.secretKey);
@@ -519,7 +536,7 @@ public class AWSSignedRequest {
             if (!dateUpdated) {
                 headers.add(newAmzDateHeader);
             }
-            final String body = new String(requestBytes, request.getBodyOffset(), requestBytes.length - request.getBodyOffset(), StandardCharsets.UTF_8);
+            final String body = getPayload();
             return this.helpers.buildHttpMessage(headers, body.getBytes());
         }
 
