@@ -35,6 +35,7 @@ public class AWSSignedRequest {
     private URL originalUrl;
     private boolean signatureInHeaders = false;
 
+    // regex for the "Credential" parameter in the "Authorization" header or the "X-Amz-Credential" query string param
     private static Pattern credentialRegex = Pattern.compile("^Credential=[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9=]{1,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
     private static Pattern credentialValueRegex = Pattern.compile("^[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9=]{1,64}/aws4_request,?$",
@@ -81,11 +82,6 @@ public class AWSSignedRequest {
         init(messageInfo.getRequest());
     }
 
-    private IRequestInfo getRequestInfo()
-    {
-        return helpers.analyzeRequest(this.requestBytes);
-    }
-
     public void setRegion(String region) { this.region = region; }
 
     public void setService(String service) { this.service = service; }
@@ -95,8 +91,8 @@ public class AWSSignedRequest {
     public String getAccessKeyId() { return this.accessKeyId; }
 
     /*
-    Update request params from an instance of AWSProfile. this allows requests to be signed with
-    credentials that differ from the original request
+    Update request params from an instance of AWSProfile. This allows requests to be signed with
+    credentials that differ from the original request.
     */
     public void applyProfile(final AWSProfile profile)
     {
@@ -135,10 +131,10 @@ public class AWSSignedRequest {
                 // extract fields from Credential parameter
                 Matcher m = credentialValueRegex.matcher(value);
                 if (!m.matches()) {
-                    //throw new IllegalArgumentException("Invalid Credential parameter in Authorization query passed to AWSSignedRequest");
+                    logger.error("Invalid Credential parameter in Authorization query passed to AWSSignedRequest");
                     return false;
                 }
-                String[] creds = value.split("/+");
+                final String[] creds = value.split("/+");
                 this.accessKeyId = creds[0];
                 this.amzDateYMD = creds[1];
                 this.region = creds[2];
@@ -176,7 +172,7 @@ public class AWSSignedRequest {
         }
 
         // verify that we have a valid authorization header for AWS
-        String[] tokens = authHeader.trim().split("[\\s,]+");
+        final String[] tokens = authHeader.trim().split("[\\s,]+");
 
         for (int i = 2; i < tokens.length; i++) {
             if (tokens[i].toLowerCase().startsWith("credential=")) {
@@ -186,7 +182,7 @@ public class AWSSignedRequest {
                     logger.error("Credential parameter in authorization header is invalid.");
                     return false;
                 }
-                String[] creds = tokens[2].split("/+");
+                final String[] creds = tokens[2].split("/+");
                 this.accessKeyId = creds[0].substring(11); // skip "Credential="
                 this.amzDateYMD = creds[1];
                 this.region = creds[2];
@@ -233,14 +229,14 @@ public class AWSSignedRequest {
     {
         // check for empty query
         final String queryString = this.originalUrl.getQuery();
-        if (queryString == null || queryString == "") {
+        if (queryString == null || queryString.equals("")) {
             return "";
         }
 
         // sort query string parameters by name/value
         ArrayList<IParameter> sortedParameters = new ArrayList<>();
         for (final String param : queryString.split("&")) {
-            String[] tokens = param.split("=", 2);
+            final String[] tokens = param.split("=", 2);
             if (tokens.length == 1) {
                 sortedParameters.add(helpers.buildParameter(tokens[0], "", IParameter.PARAM_URL));
             }
@@ -248,6 +244,7 @@ public class AWSSignedRequest {
                 sortedParameters.add(helpers.buildParameter(tokens[0], tokens[1], IParameter.PARAM_URL));
             }
         }
+        // sort params by name. sort by value if names match.
         Comparator comparator = new Comparator<IParameter> () {
             public int compare(IParameter param1, IParameter param2)
             {
@@ -285,7 +282,7 @@ public class AWSSignedRequest {
 
     private String getCanonicalHeaders()
     {
-        // get canonical headers. need at least Host header for HTTP/1.1 and authority header for http/2
+        // need at least Host header for HTTP/1.1 and authority header for http/2
         ArrayList<String> signedHeadersArray = new ArrayList<>();
         HashMap<String, String> signedHeaderMap = new HashMap<>();
         for (final String header : this.request.getHeaders()) {
@@ -297,6 +294,12 @@ public class AWSSignedRequest {
                     // make sure to use current date
                     value = this.amzDate;
                 }
+                else if (nameLower.equals("x-amz-content-sha256")) {
+                    if (this.service.toLowerCase().equals("s3")) {
+                        value = getPayloadHash();
+                    }
+                }
+
                 if (signedHeaderMap.containsKey(nameLower)) {
                     // duplicate headers have values comma-separated
                     value = value + "," + signedHeaderMap.get(nameLower);
@@ -336,9 +339,21 @@ public class AWSSignedRequest {
         return payload;
     }
 
+    private String getHttpHeaderValue(final String name)
+    {
+        for (final String header : this.request.getHeaders()) {
+            if (header.toLowerCase().startsWith(name.toLowerCase() + ":")) {
+                return splitHttpHeader(header)[1];
+            }
+        }
+        return "";
+    }
+
     private String getPayloadHash()
     {
-        if (this.service.toLowerCase().equals("s3")) {
+        // s3 payload signing is optional. The string "UNSIGNED-PAYLOAD" is used to signify no payload signing.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+        if (this.service.toLowerCase().equals("s3") && getHttpHeaderValue("x-amz-content-sha256").equals("UNSIGNED-PAYLOAD")) {
             return "UNSIGNED-PAYLOAD";
         }
         // hash payload (POST body)
@@ -350,7 +365,7 @@ public class AWSSignedRequest {
         }
 
         // if request has a body, hash it. if no body, use hash of empty string
-        String payload = getPayload();
+        final String payload = getPayload();
         return DatatypeConverter.printHexBinary(digest.digest(payload.getBytes())).toLowerCase();
     }
 
@@ -463,6 +478,7 @@ public class AWSSignedRequest {
         boolean updatedDate = false;
         boolean updatedSignature = false;
         boolean updatedSignedHeaders = false;
+        boolean updatedSha256 = false;
 
         // replace parameters that already exist
         for (IParameter param : this.request.getParameters()) {
@@ -483,6 +499,10 @@ public class AWSSignedRequest {
                 this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getSignedHeadersString(), IParameter.PARAM_URL));
                 updatedSignedHeaders = true;
             }
+            else if (name.toLowerCase().equals("x-amz-content-sha256") && this.service.toLowerCase().equals("s3")) {
+                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getPayloadHash(), IParameter.PARAM_URL));
+                updatedSha256 = true;
+            }
         }
 
         // handle cases where parameter was not in original request
@@ -497,6 +517,9 @@ public class AWSSignedRequest {
         }
         if (!updatedSignedHeaders) {
             this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", getSignedHeadersString(), IParameter.PARAM_URL));
+        }
+        if (!updatedSha256 && this.service.toLowerCase().equals("s3")) {
+            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Content-SHA256", getPayloadHash(), IParameter.PARAM_URL));
         }
 
         // update request object since we modified the parameters
@@ -517,15 +540,24 @@ public class AWSSignedRequest {
             ArrayList<String> headers = new ArrayList<>(this.request.getHeaders());
             final String newAuthHeader = getAuthorizationHeader(this.secretKey);
             final String newAmzDateHeader = "X-Amz-Date: " + this.amzDate;
+            final String newSha256Header = "X-Amz-Content-SHA256: " + getPayloadHash();
             boolean authUpdated = false;
             boolean dateUpdated = false;
+            boolean sha256Updated = false;
             for (int i = 0; i < headers.size(); i++) {
                 if (headers.get(i).toLowerCase().startsWith("authorization:")) {
                     headers.set(i, newAuthHeader);
                     authUpdated = true;
-                } else if (headers.get(i).toLowerCase().startsWith("x-amz-date:")) {
+                }
+                else if (headers.get(i).toLowerCase().startsWith("x-amz-date:")) {
                     headers.set(i, newAmzDateHeader);
                     dateUpdated = true;
+                }
+                else if (headers.get(i).toLowerCase().startsWith("x-amz-content-sha256:")) {
+                    if (this.service.toLowerCase().equals("s3")) {
+                        headers.set(i, newSha256Header);
+                        sha256Updated = true;
+                    }
                 }
             }
 
@@ -535,6 +567,9 @@ public class AWSSignedRequest {
             }
             if (!dateUpdated) {
                 headers.add(newAmzDateHeader);
+            }
+            if (!sha256Updated && this.service.toLowerCase().equals("s3")) {
+                headers.add(newSha256Header);
             }
             final String body = getPayload();
             return this.helpers.buildHttpMessage(headers, body.getBytes());
