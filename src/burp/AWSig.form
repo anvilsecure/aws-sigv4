@@ -283,7 +283,7 @@
             </constraints>
             <properties>
               <selected value="false"/>
-              <text value="Plugin Enabled"/>
+              <text value="Signing Enabled"/>
               <toolTipText value="Enable/Disable plugin"/>
             </properties>
           </component>
@@ -307,7 +307,7 @@
             </constraints>
             <properties>
               <selected value="false"/>
-              <text value="In Scope Only"/>
+              <text value="In-scope Only"/>
               <toolTipText value="Sign in-scope requests only"/>
             </properties>
           </component>

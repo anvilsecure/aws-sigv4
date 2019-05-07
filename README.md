@@ -54,3 +54,8 @@ At a minimum, a profile should contain a keyId and a secretKey. Outgoing request
 region and service should almost always be left blank with the checkbox under "auto" selected. This will ensure the region and service in the original request are used which is what is wanted in most cases.
 
 Profiles will be saved in the Burp settings store, including AWS keys, if "Persist Profiles" is checked.
+
+## Todo
+- Make UI look more like the rest of Burp by switching to a table for profiles with Add, Edit, Remove buttons.
+- Move "Custom Headers" to a table as well and give everything fixed max width.
+- Editable message request tab.

@@ -1,7 +1,9 @@
 package burp;
 
 import javax.swing.*;
-import java.awt.Component;
+import javax.swing.border.TitledBorder;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -222,7 +224,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     {
         return new AWSProfile(nameTextField.getText().trim(), accessKeyIdTextField.getText().trim(),
             secretKeyTextField.getText().trim(), regionTextField.getText().trim(), regionCheckBox.isSelected(), serviceTextField.getText().trim(),
-            serviceCheckBox.isSelected(),true);
+            serviceCheckBox.isSelected());
     }
 
     private void setupPanel()
@@ -440,7 +442,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     Check if the request is for AWS. Can be POST or GET request.
     */
     public static boolean isAwsRequest(IRequestInfo request) {
-        // all AWS requests require x-amz-date either in the query string or as a header.Date can be used but is not unique enough.
+        // all AWS requests require x-amz-date either in the query string or as a header. Date can be used but is not unique enough.
+        // Consider adding additional check for Authorization header or X-Amz-Credential query string param.
         // https://docs.aws.amazon.com/general/latest/gr/sigv4-date-handling.html
         for (String header : request.getHeaders()) {
             if (header.toLowerCase().startsWith("x-amz-date:")) {

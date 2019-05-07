@@ -54,21 +54,21 @@ public class LogWriter
 
     public void debug(final String message)
     {
-        log(message, DEBUG_LEVEL);
+        log("[DEBUG] " + message, DEBUG_LEVEL);
     }
 
     public void info(final String message)
     {
-        log(message, INFO_LEVEL);
+        log("[INFO] " + message, INFO_LEVEL);
     }
 
     public void error(final String message)
     {
-        log(message, ERROR_LEVEL);
+        log("[ERROR] " + message, ERROR_LEVEL);
     }
 
     public void fatal(final String message)
     {
-        log(message, FATAL_LEVEL);
+        log("[FATAL] " + message, FATAL_LEVEL);
     }
 }
