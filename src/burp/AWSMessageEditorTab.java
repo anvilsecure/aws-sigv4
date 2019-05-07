@@ -1,7 +1,6 @@
 package burp;
 
 import java.awt.*;
-import java.net.URL;
 
 /*
 this class provides a non-editable request tab for displaying the request after it has been signed.
@@ -34,12 +33,13 @@ public class AWSMessageEditorTab implements IMessageEditorTab
     @Override
     public Component getUiComponent() {
         this.messageTextEditor = this.callbacks.createTextEditor();
-        this.messageTextEditor.setEditable(false);
+        this.messageTextEditor.setEditable(false); // this is just a preview of the signed message
         return this.messageTextEditor.getComponent();
     }
 
     @Override
     public boolean isEnabled(byte[] content, boolean isRequest) {
+        // enable for requests only
         if (isRequest) {
             IRequestInfo requestInfo = this.helpers.analyzeRequest(content);
             return BurpExtender.isAwsRequest(requestInfo);
@@ -57,7 +57,8 @@ public class AWSMessageEditorTab implements IMessageEditorTab
             AWSSignedRequest signedRequest = new AWSSignedRequest(requestInfo.getUrl(), this.content, this.helpers, this.logger);
             final AWSProfile profile = this.burp.customizeSignedRequest(signedRequest);
             if (profile == null) {
-                this.messageTextEditor.setText(this.helpers.stringToBytes("No profile found for keyId: "+signedRequest.getAccessKeyId()+". Either add it or set a default profile."));
+                this.messageTextEditor.setText(this.helpers.stringToBytes(
+                        "No profile found for keyId: "+signedRequest.getAccessKeyId()+". Either add it or set a default profile."));
                 return;
             }
             this.messageTextEditor.setText(signedRequest.getSignedRequestBytes());
@@ -79,6 +80,6 @@ public class AWSMessageEditorTab implements IMessageEditorTab
 
     @Override
     public byte[] getSelectedData() {
-        return new byte[0];
+        return null;
     }
 }

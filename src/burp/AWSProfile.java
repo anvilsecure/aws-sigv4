@@ -8,6 +8,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 
+/*
+Class represents a credential set for AWS services. Provides functionality
+to import credentials from environment vars or a credential file.
+*/
 public class AWSProfile implements Serializable {
     public String name;
     public String accessKeyId;
@@ -16,10 +20,9 @@ public class AWSProfile implements Serializable {
     public boolean regionAuto;
     public String service;
     public boolean serviceAuto;
-    public boolean isActive;
 
     public AWSProfile(String name, String accessKeyId, String secretKey, String region, boolean regionAuto,
-                      String service, boolean serviceAuto, boolean isActive) {
+                      String service, boolean serviceAuto) {
         this.name = name;
         this.accessKeyId = accessKeyId;
         this.secretKey = secretKey;
@@ -27,7 +30,6 @@ public class AWSProfile implements Serializable {
         this.regionAuto = regionAuto;
         this.service = service;
         this.serviceAuto = serviceAuto;
-        this.isActive = isActive;
     }
 
     public static AWSProfile fromEnvironment()
@@ -36,7 +38,7 @@ public class AWSProfile implements Serializable {
         if (envAccessKeyId != null) {
             final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
             if (envSecretKey != null) {
-                return new AWSProfile("ENV", envAccessKeyId, envSecretKey, "", true, "", true, true);
+                return new AWSProfile("ENV", envAccessKeyId, envSecretKey, "", true, "", true);
             }
         }
         return null;
@@ -53,13 +55,16 @@ public class AWSProfile implements Serializable {
                 if (line.startsWith("[") && line.endsWith("]")) {
                     tmpProfile.clear();
                     profileName = line.replace("[", "").replace("]", "").trim();
-                } else if (line.startsWith("aws_access_key_id")) {
+                }
+                else if (line.startsWith("aws_access_key_id")) {
                     final String access_key = line.split("=")[1].trim();
                     tmpProfile.put("aws_access_key_id", access_key);
-                } else if (line.startsWith("aws_secret_access_key")) {
+                }
+                else if (line.startsWith("aws_secret_access_key")) {
                     final String secret_key = line.split("=")[1].trim();
                     tmpProfile.put("aws_secret_access_key", secret_key);
-                } else if (line.length() > 0) {
+                }
+                else if (line.length() > 0) {
                     //inf.println(String.format("Unrecognized content: '%s'", line));
                 }
 
@@ -71,7 +76,6 @@ public class AWSProfile implements Serializable {
                             "",
                             true,
                             "",
-                            true,
                             true));
                     tmpProfile.clear();
                     profileName = "";
