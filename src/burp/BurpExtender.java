@@ -215,9 +215,98 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return "SigV4";
     }
 
+
+    private Component buildUiTab()
+    {
+        JPanel outerPanel = new JPanel();
+
+        outerPanel.setLayout(new GridBagLayout());
+
+        // global settings, checkboxes
+        JPanel checkBoxPanel = new JPanel();
+        JCheckBox signingEnabledCheckBox = new JCheckBox("Signing Enabled");
+        signingEnabledCheckBox.setToolTipText("Disable SigV4 signing");
+        JCheckBox inScopeOnlyCheckBox = new JCheckBox("In-scope Only");
+        inScopeOnlyCheckBox.setToolTipText("Sign in-scope requests only");
+        JCheckBox persistProfilesCheckBox = new JCheckBox("Persist Profiles");
+        persistProfilesCheckBox.setToolTipText("Save profiles, including keys, in Burp settings store");
+        checkBoxPanel.setBorder(new TitledBorder("Global Options"));
+        checkBoxPanel.add(signingEnabledCheckBox);
+        checkBoxPanel.add(inScopeOnlyCheckBox);
+        checkBoxPanel.add(persistProfilesCheckBox);
+
+        // profiles table
+        JPanel profilePanel = new JPanel();
+        JButton addProfileButton = new JButton("Add");
+        JButton editProfileButton = new JButton("Edit");
+        JButton removeProfileButton = new JButton("Remove");
+        JButton importProfileButton = new JButton("Import");
+        JPanel profileButtonPanel = new JPanel();
+        profileButtonPanel.setLayout(new GridLayout(4, 1));
+        profileButtonPanel.add(addProfileButton);
+        profileButtonPanel.add(editProfileButton);
+        profileButtonPanel.add(removeProfileButton);
+        profileButtonPanel.add(importProfileButton);
+
+        String[] profileColumnNames = { "Name", "KeyId", "SecretKey", "Region", "Service" };
+        JTable profileTable = new JTable(new DefaultTableModel(profileColumnNames, 0));
+
+        JScrollPane profileScrollPane = new JScrollPane(profileTable);
+        profileScrollPane.setPreferredSize(new Dimension(1000, 200));
+
+        profilePanel.setBorder(new TitledBorder("AWS Profiles"));
+        profilePanel.add(profileButtonPanel);
+        profilePanel.add(profileScrollPane);
+
+        // custom signed headers table
+        JPanel customHeadersPanel = new JPanel();
+        JPanel customHeadersButtonPanel = new JPanel();
+        customHeadersButtonPanel.setLayout(new GridLayout(3, 1));
+        JButton addHeaderButton = new JButton("Add");
+        JButton editHeaderButton = new JButton("Edit");
+        JButton removeHeaderButton = new JButton("Remove");
+        customHeadersButtonPanel.add(addHeaderButton);
+        customHeadersButtonPanel.add(editHeaderButton);
+        customHeadersButtonPanel.add(removeHeaderButton);
+
+        String[] headersColumnNames = { "Name", "Value" };
+        JTable headersTable = new JTable(new Object[0][], headersColumnNames);
+        JScrollPane headersScrollPane = new JScrollPane(headersTable);
+        headersScrollPane.setPreferredSize(new Dimension(1000, 200));
+
+        customHeadersPanel.setBorder(new TitledBorder("Custom Signed Headers"));
+        customHeadersPanel.add(customHeadersButtonPanel);
+        customHeadersPanel.add(headersScrollPane);
+
+        // put it all together
+        GridBagConstraints c1 = new GridBagConstraints();
+        c1.gridy = 0;
+        c1.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c2 = new GridBagConstraints();
+        c2.gridy = 1;
+        c2.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c3 = new GridBagConstraints();
+        c3.gridy = 2;
+        c3.anchor = GridBagConstraints.FIRST_LINE_START;
+
+        outerPanel.add(checkBoxPanel, c1);
+        outerPanel.add(profilePanel, c2);
+        outerPanel.add(customHeadersPanel, c3);
+
+        JPanel outerOuterPanel = new JPanel();
+        GridBagConstraints cc = new GridBagConstraints();
+        cc.anchor = GridBagConstraints.FIRST_LINE_START;
+        cc.gridx = 0;
+        outerOuterPanel.add(outerPanel);
+        this.callbacks.customizeUiComponent(outerOuterPanel);
+
+        return outerOuterPanel;
+    }
+
     @Override
     public Component getUiComponent() {
-        return panel1;
+        //return panel1;
+        return buildUiTab();
     }
 
     private AWSProfile profileFromCurrentForm()
