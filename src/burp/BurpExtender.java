@@ -34,7 +34,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private AWSContextMenu contextMenu;
 
     private JLabel statusLabel;
-    private JButton makeDefaultButton;
     private JCheckBox signingEnabledCheckBox;
     private JComboBox defaultProfileComboBox;
     private JComboBox logLevelComboBox;
@@ -43,15 +42,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     public JFrame outerFrame;
     private JPanel outerOuterPanel;
-    private JButton addProfileButton;
-    private JButton editProfileButton;
-    private JButton removeProfileButton;
-    private JButton importProfileButton;
     private JTable profileTable;
     private JTable customHeadersTable;
-    private JButton addCustomHeaderButton;
-    private JButton editCustomHeaderButton;
-    private JButton removeCustomHeaderButton;
 
     public BurpExtender() {};
 
@@ -91,11 +83,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         // profiles table
         JPanel profilePanel = new JPanel();
-        addProfileButton = new JButton("Add");
-        editProfileButton = new JButton("Edit");
-        removeProfileButton = new JButton("Remove");
-        makeDefaultButton = new JButton("Default");
-        importProfileButton = new JButton("Import");
+        JButton addProfileButton = new JButton("Add");
+        JButton editProfileButton = new JButton("Edit");
+        JButton removeProfileButton = new JButton("Remove");
+        JButton makeDefaultButton = new JButton("Default");
+        JButton importProfileButton = new JButton("Import");
         JPanel profileButtonPanel = new JPanel();
         profileButtonPanel.setLayout(new GridLayout(5, 1));
         profileButtonPanel.add(addProfileButton);
@@ -118,11 +110,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JPanel customHeadersPanel = new JPanel();
         JPanel customHeadersButtonPanel = new JPanel();
         customHeadersButtonPanel.setLayout(new GridLayout(3, 1));
-        addCustomHeaderButton = new JButton("Add");
-        editCustomHeaderButton = new JButton("Edit");
-        removeCustomHeaderButton = new JButton("Remove");
+        JButton addCustomHeaderButton = new JButton("Add");
+        JButton editCustomHeaderButton = new JButton("Edit");
+        JButton removeCustomHeaderButton = new JButton("Remove");
         customHeadersButtonPanel.add(addCustomHeaderButton);
-        customHeadersButtonPanel.add(editCustomHeaderButton);
+        //customHeadersButtonPanel.add(editCustomHeaderButton); // edit in-place in table
         customHeadersButtonPanel.add(removeCustomHeaderButton);
 
         String[] headersColumnNames = { "Name", "Value" };
@@ -154,15 +146,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         outerPanel.add(customHeadersPanel, c4);
 
         outerOuterPanel = new JPanel();
-        GridBagConstraints cc = new GridBagConstraints();
-        cc.anchor = GridBagConstraints.FIRST_LINE_START;
-        cc.gridx = 0;
         outerOuterPanel.add(outerPanel);
-        this.callbacks.customizeUiComponent(outerOuterPanel);
+
         outerFrame = new JFrame();
+        this.callbacks.customizeUiComponent(outerFrame);
         outerFrame.add(outerOuterPanel);
 
-        // action handlers
+        // profile button handlers
         addProfileButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
@@ -221,7 +211,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         });
 
-        // custom header buttons
+        // custom header button handlers
         addCustomHeaderButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
@@ -271,7 +261,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return outerFrame;
     }
 
-    public boolean isSigningEnabled()
+    private boolean isSigningEnabled()
     {
         return this.signingEnabledCheckBox.isSelected();
     }
@@ -613,7 +603,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         ArrayList<String> headers = new ArrayList<>();
         DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
         for (int i = 0; i < model.getRowCount(); i++) {
-            headers.add(String.format("%s: %s", model.getValueAt(i, 0), model.getValueAt(i, 1)));
+            final String name = (String)model.getValueAt(i, 0);
+            final String value = (String)model.getValueAt(i, 1);
+            if (!name.equals("")) { // skip empty header names
+                headers.add(String.format("%s: %s", name, value));
+            }
         }
         return headers;
     }
@@ -672,7 +666,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     return;
                 }
 
-                byte[] requestBytes = signedRequest.getSignedRequestBytes();
+                byte[] requestBytes = signedRequest.getSignedRequestBytes(profile.secretKey);
                 if (requestBytes != null) {
                     logger.info("Signed request with profile: "+profile);
                     messageInfo.setRequest(requestBytes);

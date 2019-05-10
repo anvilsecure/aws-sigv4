@@ -61,7 +61,7 @@ public class AWSMessageEditorTab implements IMessageEditorTab
                         "No profile found for keyId: "+signedRequest.getAccessKeyId()+". Either add it or set a default profile."));
                 return;
             }
-            this.messageTextEditor.setText(signedRequest.getSignedRequestBytes());
+            this.messageTextEditor.setText(signedRequest.getSignedRequestBytes(profile.secretKey));
             return;
         } catch (Exception exc) {
         }

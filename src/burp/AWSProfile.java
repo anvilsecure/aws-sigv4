@@ -15,21 +15,16 @@ to import credentials from environment vars or a credential file.
 public class AWSProfile implements Serializable {
     public String name;
     public String accessKeyId;
-    public String secretKey;
+    protected String secretKey;
     public String region;
-    public boolean regionAuto;
     public String service;
-    public boolean serviceAuto;
 
-    public AWSProfile(String name, String accessKeyId, String secretKey, String region, boolean regionAuto,
-                      String service, boolean serviceAuto) {
+    public AWSProfile(String name, String accessKeyId, String secretKey, String region, String service) {
         this.name = name;
         this.accessKeyId = accessKeyId;
         this.secretKey = secretKey;
         this.region = region;
-        this.regionAuto = regionAuto;
         this.service = service;
-        this.serviceAuto = serviceAuto;
     }
 
     public static AWSProfile fromEnvironment()
@@ -38,7 +33,7 @@ public class AWSProfile implements Serializable {
         if (envAccessKeyId != null) {
             final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
             if (envSecretKey != null) {
-                return new AWSProfile("ENV", envAccessKeyId, envSecretKey, "", true, "", true);
+                return new AWSProfile("ENV", envAccessKeyId, envSecretKey, "", "");
             }
         }
         return null;
@@ -74,9 +69,7 @@ public class AWSProfile implements Serializable {
                             tmpProfile.get("aws_access_key_id"),
                             tmpProfile.get("aws_secret_access_key"),
                             "",
-                            true,
-                            "",
-                            true));
+                            ""));
                     tmpProfile.clear();
                     profileName = "";
                 }
