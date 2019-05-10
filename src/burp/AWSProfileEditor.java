@@ -81,7 +81,7 @@ public class AWSProfileEditor {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
                 if (burp.addProfile(new AWSProfile(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText(),
-                        regionTextField.getText(), true, serviceTextField.getText(), true))) {
+                        regionTextField.getText(),  serviceTextField.getText()))) {
                     dialog.setVisible(false);
                 } else {
                     statusLabel.setText("Invalid settings");
