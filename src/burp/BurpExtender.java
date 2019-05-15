@@ -1,5 +1,7 @@
 package burp;
 
+import com.sun.tools.javac.util.ArrayUtils;
+
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
@@ -55,7 +57,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         // global settings, checkboxes
         JPanel globalSettingsPanel = new JPanel();
         globalSettingsPanel.setLayout(new GridLayout(2, 3));
-        globalSettingsPanel.setBorder(new TitledBorder("Global Options"));
+        globalSettingsPanel.setBorder(new TitledBorder("Settings"));
         JPanel checkBoxPanel = new JPanel();
         signingEnabledCheckBox = new JCheckBox("Signing Enabled");
         signingEnabledCheckBox.setToolTipText("Disable SigV4 signing");
@@ -66,15 +68,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         checkBoxPanel.add(signingEnabledCheckBox);
         checkBoxPanel.add(inScopeOnlyCheckBox);
         checkBoxPanel.add(persistProfilesCheckBox);
-        JPanel settingsPanel = new JPanel();
+        JPanel otherSettingsPanel = new JPanel();
         defaultProfileComboBox = new JComboBox();
         logLevelComboBox = new JComboBox();
-        settingsPanel.add(new JLabel("Log Level"));
-        settingsPanel.add(logLevelComboBox);
-        settingsPanel.add(new JLabel("Default Profile"));
-        settingsPanel.add(defaultProfileComboBox);
+        otherSettingsPanel.add(new JLabel("Log Level"));
+        otherSettingsPanel.add(logLevelComboBox);
+        otherSettingsPanel.add(new JLabel("Default Profile"));
+        otherSettingsPanel.add(defaultProfileComboBox);
         globalSettingsPanel.add(checkBoxPanel);
-        globalSettingsPanel.add(settingsPanel);
+        globalSettingsPanel.add(otherSettingsPanel);
 
         // status label
         JPanel statusPanel = new JPanel();
@@ -97,7 +99,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         profileButtonPanel.add(importProfileButton);
 
         String[] profileColumnNames = { "Name", "KeyId", "SecretKey", "Region", "Service" };
-        profileTable = new JTable(new DefaultTableModel(profileColumnNames, 0));
+        profileTable = new JTable(new DefaultTableModel(profileColumnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                // prevent table cells from being edited. must use dialog to edit.
+                return false;
+            }
+        });
 
         JScrollPane profileScrollPane = new JScrollPane(profileTable);
         profileScrollPane.setPreferredSize(new Dimension(1000, 200));
@@ -445,7 +453,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         defaultProfileComboBox.removeAllItems();
         defaultProfileComboBox.addItem(NO_DEFAULT_PROFILE);
 
-        for (final String name : this.profileNameMap.keySet()) {
+        // sort by name in table
+        List<String> profileNames = new ArrayList<>(this.profileNameMap.keySet());
+        Collections.sort(profileNames);
+
+        for (final String name : profileNames) {
             AWSProfile profile = this.profileNameMap.get(name);
             model.addRow(new Object[] {profile.name, profile.accessKeyId, profile.secretKey, profile.region, profile.service});
             defaultProfileComboBox.addItem(name);
@@ -454,7 +466,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     }
 
 
-    public boolean addProfile(AWSProfile profile)
+    protected boolean addProfile(AWSProfile profile)
     {
         if (profile.name.length() > 0) {
             AWSProfile p1 = this.profileNameMap.get(profile.name);
@@ -483,7 +495,34 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return false;
     }
 
-    private void deleteProfile(AWSProfile profile)
+    /*
+    if newProfile is valid, delete oldProfile and add newProfile.
+     */
+    protected boolean updateProfile(final AWSProfile oldProfile, final AWSProfile newProfile)
+    {
+        if (oldProfile == null) {
+            return addProfile(newProfile);
+        }
+        if (newProfile.name.length() > 0) {
+            // remove any profile with same name
+            AWSProfile p1 = this.profileNameMap.get(oldProfile.name);
+            AWSProfile p2 = this.profileKeyIdMap.get(oldProfile.accessKeyId);
+            if ((p1 == null) || (p2 == null)) {
+                updateStatus("Update profile failed. Old profile doesn't exist.");
+                return false;
+            }
+            deleteProfile(oldProfile);
+            if (!addProfile(newProfile)) {
+                addProfile(oldProfile);
+                return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+
+    protected void deleteProfile(AWSProfile profile)
     {
         if (this.profileNameMap.containsKey(profile.name)) {
             updateStatus(String.format("Deleted profile '%s'", profile.name));

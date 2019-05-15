@@ -29,7 +29,6 @@ $ mvn package
 [INFO] ------------------------------------------------------------------------
 $ ls target
 archive-tmp
-awsig-1.0-SNAPSHOT-jar-with-dependencies.jar
 awsig-1.0-SNAPSHOT.jar
 classes
 generated-sources
@@ -37,10 +36,9 @@ maven-archiver
 maven-status
 ```
 
-That should result in a newly created `target` directory containing class files
-as well as two JARs. One containing all the dependencies named
-`awsig-<version>-jar-with-dependencies.jar` and the other just named
-`awsig-<version>.jar`. Those should then be able to be loaded by Burp.
+That will result in a newly created `target` directory with class files as well
+as a single JAR containing all the dependencies named `awsig-<version>.jar`.
+This JAR can be loaded into Burp using the Extender tab.
 
 Loading the project up in IntelliJ IDEA should also make it easy to build the
 source.

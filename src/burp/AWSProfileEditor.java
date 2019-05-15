@@ -32,44 +32,38 @@ public class AWSProfileEditor {
     set profile to null for a create form.
      */
     public static JDialog getAddProfileDialog(BurpExtender burp, AWSProfile profile) {
-        /*
-        ,-outerPanel---------
-        |    textPanel
-        |    bottomPanel
-        '--------------------
-         */
-        JPanel outerPanel = new JPanel(new GridLayout(2, 1));
-        outerPanel.setBorder(new TitledBorder(""));
-        JDialog dialog = new JDialog(burp.outerFrame, "Add Profile", true);
+
+        JDialog dialog = new JDialog(burp.outerFrame, "Add/Edit Profile", true);
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
-        JPanel textPanel = new JPanel(new GridBagLayout());
+        JPanel outerPanel = new JPanel(new GridBagLayout());
+        outerPanel.setBorder(new TitledBorder(""));
 
-        textPanel.add(new JLabel("Name"), newConstraint(0, 0, GridBagConstraints.FIRST_LINE_START));
+        outerPanel.add(new JLabel("Name"), newConstraint(0, 0, GridBagConstraints.FIRST_LINE_START));
         JTextField nameTextField = new JTextField("", 40);
-        textPanel.add(nameTextField, newConstraint(1, 0));
-        textPanel.add(new JLabel("KeyId"), newConstraint(0, 1, GridBagConstraints.FIRST_LINE_START));
+        outerPanel.add(nameTextField, newConstraint(1, 0));
+        outerPanel.add(new JLabel("KeyId"), newConstraint(0, 1, GridBagConstraints.FIRST_LINE_START));
         JTextField keyIdTextField = new JTextField("", 40);
-        textPanel.add(keyIdTextField, newConstraint(1, 1));
-        textPanel.add(new JLabel("SecretKey"), newConstraint(0, 2, GridBagConstraints.FIRST_LINE_START));
+        outerPanel.add(keyIdTextField, newConstraint(1, 1));
+        outerPanel.add(new JLabel("SecretKey"), newConstraint(0, 2, GridBagConstraints.FIRST_LINE_START));
         JTextField secretKeyTextField = new JTextField("", 40);
-        textPanel.add(secretKeyTextField, newConstraint(1, 2));
-        textPanel.add(new JLabel("Region"), newConstraint(0, 3, GridBagConstraints.FIRST_LINE_START));
+        outerPanel.add(secretKeyTextField, newConstraint(1, 2));
+        outerPanel.add(new JLabel("Region"), newConstraint(0, 3, GridBagConstraints.FIRST_LINE_START));
         JTextField regionTextField = new JTextField("", 40);
-        textPanel.add(regionTextField, newConstraint(1, 3));
-        textPanel.add(new JLabel("Service"), newConstraint(0, 4, GridBagConstraints.FIRST_LINE_START));
+        outerPanel.add(regionTextField, newConstraint(1, 3));
+        outerPanel.add(new JLabel("Service"), newConstraint(0, 4, GridBagConstraints.FIRST_LINE_START));
         JTextField serviceTextField = new JTextField("", 40);
-        textPanel.add(serviceTextField, newConstraint(1, 4));
-        outerPanel.add(textPanel);
+        outerPanel.add(serviceTextField, newConstraint(1, 4));
 
-        JPanel bottomPanel = new JPanel(new GridBagLayout());
         JLabel statusLabel = new JLabel("Ok to submit");
         JButton okButton = new JButton("Ok");
         JButton cancelButton = new JButton("Cancel");
-        bottomPanel.add(statusLabel, newConstraint(0, 0, 2, 1));
-        bottomPanel.add(okButton, newConstraint(0, 1));
-        bottomPanel.add(cancelButton, newConstraint(1, 1));
-        outerPanel.add(bottomPanel);
+
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.add(okButton);
+        buttonPanel.add(cancelButton);
+        outerPanel.add(statusLabel, newConstraint(0, 5, 2, 1));
+        outerPanel.add(buttonPanel, newConstraint(0, 6, 2, 1));
 
         cancelButton.addActionListener(new ActionListener() {
             @Override
@@ -80,16 +74,18 @@ public class AWSProfileEditor {
         okButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
-                if (burp.addProfile(new AWSProfile(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText(),
+                if (burp.updateProfile(profile, new AWSProfile(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText(),
                         regionTextField.getText(),  serviceTextField.getText()))) {
                     dialog.setVisible(false);
-                } else {
-                    statusLabel.setText("Invalid settings");
+                }
+                else {
+                    statusLabel.setText("Invalid settings. Ensure keyId is unique and name is not empty.");
                 }
             }
         });
 
         if (profile != null) {
+            // populate fields with existing profile for an "edit" dialog.
             nameTextField.setText(profile.name);
             keyIdTextField.setText(profile.accessKeyId);
             secretKeyTextField.setText(profile.secretKey);
