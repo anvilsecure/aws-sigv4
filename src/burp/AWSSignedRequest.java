@@ -52,9 +52,12 @@ public class AWSSignedRequest {
         this.requestBytes = requestBytes;
         this.request = helpers.analyzeRequest(requestBytes);
         this.signedHeaderSet = new HashSet<String>();
-        // make sure required host header is part of signature
+        // make sure required host and date headers are part of signature.
         // TODO: for http/2, we need authority header
         this.signedHeaderSet.add("host");
+        // requests require either one of these date headers.
+        this.signedHeaderSet.add("x-amz-date");
+        this.signedHeaderSet.add("date");
 
         // attempt to parse header and query string for all requests. we only expect to see the query string
         // parameters with GET requests but this will be robust
@@ -289,7 +292,7 @@ public class AWSSignedRequest {
     private String getCanonicalHeaders()
     {
         // need at least Host header for HTTP/1.1 and authority header for http/2
-        ArrayList<String> signedHeadersArray = new ArrayList<>();
+        ArrayList<String> signedHeaderArray = new ArrayList<>();
         HashMap<String, String> signedHeaderMap = new HashMap<>();
         for (final String header : this.request.getHeaders()) {
             String[] kv = splitHttpHeader(header);
@@ -310,34 +313,42 @@ public class AWSSignedRequest {
                 }
 
                 if (signedHeaderMap.containsKey(nameLower)) {
-                    // duplicate headers have values comma-separated
-                    value = value + "," + signedHeaderMap.get(nameLower);
+                    // duplicate headers have values comma-separated in the order that they appear
+                    value = signedHeaderMap.get(nameLower) + "," + value;
                 }
-                signedHeadersArray.add(nameLower);
+                else {
+                    signedHeaderArray.add(nameLower);
+                }
                 signedHeaderMap.put(nameLower, value);
             }
         }
-        Collections.sort(signedHeadersArray);
+        Collections.sort(signedHeaderArray);
         String canonicalHeaders = "";
-        for (final String nameLower : signedHeadersArray) {
+        for (final String nameLower : signedHeaderArray) {
             canonicalHeaders += String.format("%s:%s\n", nameLower, signedHeaderMap.get(nameLower));
         }
         return canonicalHeaders;
     }
 
+    /*
+    Create the signed headers string for use in the signature and either the X-Amz-SignedHeaders or Authorization header.
+    Only headers that exist will be included.
+    */
     private String getCanonicalSignedHeaders()
     {
         // build list of headers to sign, then sort them.
-        ArrayList<String> signedHeadersArray = new ArrayList<>();
+        Set<String> validSignedHeaderSet = new HashSet<>();
         for (final String header : request.getHeaders()) {
             final String nameLower = splitHttpHeader(header)[0].toLowerCase();
             if (this.signedHeaderSet.contains(nameLower)) {
-                signedHeadersArray.add(nameLower);
+                validSignedHeaderSet.add(nameLower);
             }
         }
-        Collections.sort(signedHeadersArray);
-        return String.join(";", signedHeadersArray);
+        List<String> signedHeaderList = new ArrayList<>(validSignedHeaderSet);
+        Collections.sort(signedHeaderList);
+        return String.join(";", signedHeaderList);
     }
+
 
     private String getPayload()
     {
@@ -367,7 +378,7 @@ public class AWSSignedRequest {
     }
 
     /*
-    get hash suiteable for Content-MD5 http header
+    get hash suitable for Content-MD5 http header. result will be base64 encoded digest.
     */
     private String getContentMD5()
     {
@@ -419,29 +430,10 @@ public class AWSSignedRequest {
             return null;
         }
 
-        logger.debug("===========BEGIN CANONICAL REQUEST==========\n" + canonicalRequest + "\n===========END CANONICAL REQUEST============");
+        logger.debug("\n===========BEGIN CANONICAL REQUEST==========\n" + canonicalRequest + "\n===========END CANONICAL REQUEST============");
         return DatatypeConverter.printHexBinary(digest.digest(canonicalRequest.getBytes())).toLowerCase();
     }
 
-    /*
-    Create the signed headers string for use in the signature and either the X-Amz-SignedHeaders or Authorization header.
-    Only headers that exist will be included.
-    */
-    private String getSignedHeadersString()
-    {
-        // build list of headers to sign, then sort them.
-        ArrayList<String> signedHeadersArray = new ArrayList<>();
-        for (final String header : request.getHeaders()) {
-            final String name = splitHttpHeader(header)[0];
-            if (this.signedHeaderSet.contains(name.toLowerCase())) {
-                signedHeadersArray.add(name);
-            }
-        }
-        Collections.sort(signedHeadersArray);
-
-        // build ';' separated list of all signed headers.
-        return String.join(";", signedHeadersArray).toLowerCase();
-    }
 
     private byte[] stringToBytes(String s)
     {
@@ -481,7 +473,7 @@ public class AWSSignedRequest {
                 getCredentialScope(false),
                 getHashedCanonicalRequest());
 
-        logger.debug("===========BEGIN STRING TO SIGN=============\n" + toSign + "\n===========END STRING TO SIGN===============");
+        logger.debug("\n===========BEGIN STRING TO SIGN=============\n" + toSign + "\n===========END STRING TO SIGN===============");
 
         final byte[] kDate = getHmac(stringToBytes("AWS4"+secretKey), stringToBytes(this.amzDateYMD));
         final byte[] kRegion = getHmac(kDate, stringToBytes(this.region));
@@ -495,7 +487,7 @@ public class AWSSignedRequest {
     {
         final String signature = getSignature(secretKey);
         return String.format("Authorization: %s Credential=%s, SignedHeaders=%s, Signature=%s",
-                this.algorithm, getCredentialScope(true), getSignedHeadersString(), signature);
+                this.algorithm, getCredentialScope(true), getCanonicalSignedHeaders(), signature);
     }
 
     /*
@@ -525,7 +517,7 @@ public class AWSSignedRequest {
                 updatedSignature = true;
             }
             else if (name.toLowerCase().equals("x-amz-signedheaders")) {
-                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getSignedHeadersString(), IParameter.PARAM_URL));
+                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getCanonicalSignedHeaders(), IParameter.PARAM_URL));
                 updatedSignedHeaders = true;
             }
             else if (name.toLowerCase().equals("x-amz-content-sha256") && isS3Request()) {
@@ -545,7 +537,7 @@ public class AWSSignedRequest {
             this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Signature", getSignature(secretKey), IParameter.PARAM_URL));
         }
         if (!updatedSignedHeaders) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", getSignedHeadersString(), IParameter.PARAM_URL));
+            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", getCanonicalSignedHeaders(), IParameter.PARAM_URL));
         }
         if (!updatedSha256 && isS3Request()) {
             this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Content-SHA256", getPayloadHash(), IParameter.PARAM_URL));
