@@ -18,7 +18,8 @@ This class computes the SigV4 for AWS requests using SHA256.
 
 See documentation here: https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
 */
-public class AWSSignedRequest {
+public class AWSSignedRequest
+{
     private final String algorithm = "AWS4-HMAC-SHA256"; // we only compute the SHA256
     private String accessKeyId;
     private String region;
@@ -84,13 +85,25 @@ public class AWSSignedRequest {
         init(messageInfo.getRequest());
     }
 
-    public void setRegion(String region) { this.region = region; }
+    public void setRegion(String region)
+    {
+        this.region = region;
+    }
 
-    public void setService(String service) { this.service = service; }
+    public void setService(String service)
+    {
+        this.service = service;
+    }
 
-    public void setAccessKeyId(String accessKeyId) { this.accessKeyId = accessKeyId; }
+    public void setAccessKeyId(String accessKeyId)
+    {
+        this.accessKeyId = accessKeyId;
+    }
 
-    public String getAccessKeyId() { return this.accessKeyId; }
+    public String getAccessKeyId()
+    {
+        return this.accessKeyId;
+    }
 
     /*
     check service to determine if this is an s3 request. s3 requests must be handled differently.
@@ -123,9 +136,9 @@ public class AWSSignedRequest {
     {
         String[] tokens = header.trim().split("[\\s:]+", 2);
         if (tokens.length < 2) {
-            return new String[] {tokens[0], ""};
+            return new String[]{tokens[0], ""};
         }
-        return new String[] {tokens[0], tokens[1]};
+        return new String[]{tokens[0], tokens[1]};
     }
 
     /*
@@ -225,13 +238,21 @@ public class AWSSignedRequest {
         if (newHeaders.size() > 0) {
             ArrayList<String> headers = (ArrayList<String>) this.request.getHeaders();
             for (final String header : newHeaders) {
-                logger.debug("Adding custom signed header: "+header);
+                logger.debug("Adding custom signed header: " + header);
                 this.signedHeaderSet.add(splitHttpHeader(header)[0].toLowerCase());
                 headers.add(header);
             }
             this.requestBytes = this.helpers.buildHttpMessage(headers, getPayloadBytes());
             this.request = helpers.analyzeRequest(this.requestBytes);
         }
+    }
+
+    /* add names of headers to sign. this can be used to sign additional headers from
+    the original request
+    */
+    public void addSignedHeaderNames(List<String> headerNames)
+    {
+        this.signedHeaderSet.addAll(headerNames);
     }
 
     private String getCanonicalQueryString()
@@ -254,7 +275,8 @@ public class AWSSignedRequest {
             }
         }
         // sort params by name. sort by value if names match.
-        Comparator comparator = new Comparator<IParameter> () {
+        Comparator comparator = new Comparator<IParameter>()
+        {
             public int compare(IParameter param1, IParameter param2)
             {
                 if (param1.getName().equals(param2.getName())) {
@@ -364,7 +386,7 @@ public class AWSSignedRequest {
         if (this.request.getBodyOffset() < this.requestBytes.length) {
             return Arrays.copyOfRange(this.requestBytes, this.request.getBodyOffset(), this.requestBytes.length);
         }
-        return new byte[] {};
+        return new byte[]{};
     }
 
     private String getHttpHeaderValue(final String name)
@@ -475,7 +497,7 @@ public class AWSSignedRequest {
 
         logger.debug("\n===========BEGIN STRING TO SIGN=============\n" + toSign + "\n===========END STRING TO SIGN===============");
 
-        final byte[] kDate = getHmac(stringToBytes("AWS4"+secretKey), stringToBytes(this.amzDateYMD));
+        final byte[] kDate = getHmac(stringToBytes("AWS4" + secretKey), stringToBytes(this.amzDateYMD));
         final byte[] kRegion = getHmac(kDate, stringToBytes(this.region));
         final byte[] kService = getHmac(kRegion, stringToBytes(this.service));
         final byte[] kSigning = getHmac(kService, stringToBytes("aws4_request"));

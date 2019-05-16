@@ -1,7 +1,5 @@
 package burp;
 
-import com.sun.tools.javac.util.ArrayUtils;
-
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
@@ -23,8 +21,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String SETTING_EXTENSION_ENABLED = "ExtensionEnabled";
     private static final String SETTING_DEFAULT_PROFILE_NAME = "DefaultProfileName";
     private static final String SETTING_LOG_LEVEL = "LogLevel";
-    private static final String SETTING_CUSTOM_HEADERS = "CustomHeaders";
-    private static final String SETTING_INSCOPE_ONLY = "InScopeOnly";
+    private static final String SETTING_CUSTOM_HEADERS = "CustomSignedHeaders";
+    private static final String SETTING_ADDITIONAL_SIGNED_HEADER_NAMES = "AdditionalSignedHeaderNames";
+    private static final String SETTING_IN_SCOPE_ONLY = "InScopeOnly";
 
     private static final String NO_DEFAULT_PROFILE = "";
 
@@ -41,23 +40,38 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JComboBox logLevelComboBox;
     private JCheckBox persistProfilesCheckBox;
     private JCheckBox inScopeOnlyCheckBox;
+    private JTextField additionalSignedHeadersField;
 
     public JFrame outerFrame;
     private JPanel outerOuterPanel;
     private JTable profileTable;
     private JTable customHeadersTable;
 
-    public BurpExtender() {};
+    protected static Color orange; // mimic burp UI
 
-    private Component buildUiTab()
+    public BurpExtender()
     {
+    }
+
+    private TitledBorder createTitledBorder(final String title)
+    {
+        TitledBorder border = new TitledBorder(title);
+        border.setTitleColor(this.orange);
+        return border;
+    }
+
+    private void buildUiTab()
+    {
+        orange = new Color(244, 116, 66);
+        outerFrame = new JFrame(); // target for dialog location
+
         JPanel outerPanel = new JPanel();
         outerPanel.setLayout(new GridBagLayout());
 
         // global settings, checkboxes
         JPanel globalSettingsPanel = new JPanel();
         globalSettingsPanel.setLayout(new GridLayout(2, 3));
-        globalSettingsPanel.setBorder(new TitledBorder("Settings"));
+        globalSettingsPanel.setBorder(createTitledBorder("Settings"));
         JPanel checkBoxPanel = new JPanel();
         signingEnabledCheckBox = new JCheckBox("Signing Enabled");
         signingEnabledCheckBox.setToolTipText("Disable SigV4 signing");
@@ -98,10 +112,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         profileButtonPanel.add(makeDefaultButton);
         profileButtonPanel.add(importProfileButton);
 
-        String[] profileColumnNames = { "Name", "KeyId", "SecretKey", "Region", "Service" };
-        profileTable = new JTable(new DefaultTableModel(profileColumnNames, 0) {
+        String[] profileColumnNames = {"Name", "KeyId", "SecretKey", "Region", "Service"};
+        profileTable = new JTable(new DefaultTableModel(profileColumnNames, 0)
+        {
             @Override
-            public boolean isCellEditable(int row, int column) {
+            public boolean isCellEditable(int row, int column)
+            {
                 // prevent table cells from being edited. must use dialog to edit.
                 return false;
             }
@@ -109,30 +125,37 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         JScrollPane profileScrollPane = new JScrollPane(profileTable);
         profileScrollPane.setPreferredSize(new Dimension(1000, 200));
-
-        profilePanel.setBorder(new TitledBorder("AWS Profiles"));
+        profilePanel.setBorder(createTitledBorder("AWS Profiles"));
         profilePanel.add(profileButtonPanel);
         profilePanel.add(profileScrollPane);
+
+        // additional headers to sign
+        JPanel additionalSignedHeadersPanel = new JPanel();
+        additionalSignedHeadersPanel.setBorder(createTitledBorder("Signed Headers"));
+        additionalSignedHeadersField = new JTextField("", 65);
+        additionalSignedHeadersField.setToolTipText("Comma-separated list of additional header names to sign");
+        additionalSignedHeadersPanel.add(additionalSignedHeadersField);
 
         // custom signed headers table
         JPanel customHeadersPanel = new JPanel();
         JPanel customHeadersButtonPanel = new JPanel();
         customHeadersButtonPanel.setLayout(new GridLayout(3, 1));
         JButton addCustomHeaderButton = new JButton("Add");
-        JButton editCustomHeaderButton = new JButton("Edit");
+        //JButton editCustomHeaderButton = new JButton("Edit");
         JButton removeCustomHeaderButton = new JButton("Remove");
         customHeadersButtonPanel.add(addCustomHeaderButton);
         //customHeadersButtonPanel.add(editCustomHeaderButton); // edit in-place in table
         customHeadersButtonPanel.add(removeCustomHeaderButton);
 
-        String[] headersColumnNames = { "Name", "Value" };
+        String[] headersColumnNames = {"Name", "Value"};
         customHeadersTable = new JTable(new DefaultTableModel(headersColumnNames, 0));
         JScrollPane headersScrollPane = new JScrollPane(customHeadersTable);
         headersScrollPane.setPreferredSize(new Dimension(1000, 200));
 
-        customHeadersPanel.setBorder(new TitledBorder("Custom Signed Headers"));
+        customHeadersPanel.setBorder(createTitledBorder("Custom Signed Headers"));
         customHeadersPanel.add(customHeadersButtonPanel);
         customHeadersPanel.add(headersScrollPane);
+
 
         // put it all together
         GridBagConstraints c1 = new GridBagConstraints();
@@ -147,35 +170,41 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c4 = new GridBagConstraints();
         c4.gridy = 3;
         c4.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c5 = new GridBagConstraints();
+        c5.gridy = 4;
+        c5.anchor = GridBagConstraints.FIRST_LINE_START;
 
         outerPanel.add(globalSettingsPanel, c1);
         outerPanel.add(statusPanel, c2);
         outerPanel.add(profilePanel, c3);
-        outerPanel.add(customHeadersPanel, c4);
+        outerPanel.add(customHeadersPanel, c5);
+        outerPanel.add(additionalSignedHeadersPanel, c4);
 
         outerOuterPanel = new JPanel();
         outerOuterPanel.add(outerPanel);
 
-        outerFrame = new JFrame();
-        this.callbacks.customizeUiComponent(outerFrame);
-        outerFrame.add(outerOuterPanel);
+        this.callbacks.customizeUiComponent(outerOuterPanel);
 
         // profile button handlers
-        addProfileButton.addActionListener(new ActionListener() {
+        addProfileButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 JDialog dialog = AWSProfileEditor.getAddProfileDialog(BurpExtender.this, null);
                 callbacks.customizeUiComponent(dialog);
                 dialog.setVisible(true);
             }
         });
-        editProfileButton.addActionListener(new ActionListener() {
+        editProfileButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 int[] rowIndeces = profileTable.getSelectedRows();
                 if (rowIndeces.length == 1) {
                     DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
-                    final String name = (String)model.getValueAt(rowIndeces[0], 0);
+                    final String name = (String) model.getValueAt(rowIndeces[0], 0);
                     JDialog dialog = AWSProfileEditor.getAddProfileDialog(BurpExtender.this, profileNameMap.get(name));
                     callbacks.customizeUiComponent(dialog);
                     dialog.setVisible(true);
@@ -185,26 +214,30 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 }
             }
         });
-        removeProfileButton.addActionListener(new ActionListener() {
+        removeProfileButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                 ArrayList<String> profileNames = new ArrayList<>();
                 for (int rowIndex : profileTable.getSelectedRows()) {
-                    profileNames.add((String)model.getValueAt(rowIndex, 0));
+                    profileNames.add((String) model.getValueAt(rowIndex, 0));
                 }
                 for (final String name : profileNames) {
                     deleteProfile(profileNameMap.get(name));
                 }
             }
         });
-        makeDefaultButton.addActionListener(new ActionListener() {
+        makeDefaultButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 int[] rowIndeces = profileTable.getSelectedRows();
                 DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                 if (rowIndeces.length == 1) {
-                    final String name = (String)model.getValueAt(rowIndeces[0], 0);
+                    final String name = (String) model.getValueAt(rowIndeces[0], 0);
                     setDefaultProfileName(name);
                 }
                 else {
@@ -212,28 +245,34 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 }
             }
         });
-        importProfileButton.addActionListener(new ActionListener() {
+        importProfileButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 importProfiles();
             }
         });
 
         // custom header button handlers
-        addCustomHeaderButton.addActionListener(new ActionListener() {
+        addCustomHeaderButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
                 model.addRow(new Object[]{"", ""});
             }
         });
-        removeCustomHeaderButton.addActionListener(new ActionListener() {
+        removeCustomHeaderButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
                 int[] rowIndeces = customHeadersTable.getSelectedRows();
                 Arrays.sort(rowIndeces);
-                for (int i = rowIndeces.length-1; i >= 0; i--) {
+                for (int i = rowIndeces.length - 1; i >= 0; i--) {
                     model.removeRow(rowIndeces[i]);
                 }
             }
@@ -244,6 +283,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         {
             final private int logLevel;
             final private String levelName;
+
             public LogLevelComboBoxItem(final int logLevel)
             {
                 this.logLevel = logLevel;
@@ -251,7 +291,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
 
             @Override
-            public String toString() { return this.levelName; }
+            public String toString()
+            {
+                return this.levelName;
+            }
         }
         this.logLevelComboBox.addItem(new LogLevelComboBoxItem(LogWriter.DEBUG_LEVEL));
         this.logLevelComboBox.addItem(new LogLevelComboBoxItem(LogWriter.INFO_LEVEL));
@@ -259,14 +302,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.logLevelComboBox.addItem(new LogLevelComboBoxItem(LogWriter.FATAL_LEVEL));
         this.logLevelComboBox.setSelectedIndex(logger.getLevel());
 
-        this.logLevelComboBox.addActionListener(new ActionListener() {
+        this.logLevelComboBox.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
-                logger.setLevel(((LogLevelComboBoxItem)logLevelComboBox.getSelectedItem()).logLevel);
+            public void actionPerformed(ActionEvent actionEvent)
+            {
+                logger.setLevel(((LogLevelComboBoxItem) logLevelComboBox.getSelectedItem()).logLevel);
             }
         });
-
-        return outerFrame;
     }
 
     private boolean isSigningEnabled()
@@ -276,7 +319,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
 
     @Override
-    public void registerExtenderCallbacks (IBurpExtenderCallbacks callbacks)
+    public void registerExtenderCallbacks(IBurpExtenderCallbacks callbacks)
     {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
@@ -292,9 +335,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.profileKeyIdMap = new HashMap<>();
         this.profileNameMap = new HashMap<>();
 
-        SwingUtilities.invokeLater(new Runnable() {
+        SwingUtilities.invokeLater(new Runnable()
+        {
             @Override
-            public void run() {
+            public void run()
+            {
                 buildUiTab();
                 callbacks.addSuiteTab(BurpExtender.this);
                 callbacks.registerHttpListener(BurpExtender.this);
@@ -335,7 +380,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.callbacks.saveExtensionSetting(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(logger.getLevel()));
         this.callbacks.saveExtensionSetting(SETTING_CUSTOM_HEADERS, String.join("\n", getCustomHeadersFromUI()));
-        this.callbacks.saveExtensionSetting(SETTING_INSCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected() ? "true" : "false");
+        this.callbacks.saveExtensionSetting(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, String.join(",", getAdditionalSignedHeadersFromUI()));
+        this.callbacks.saveExtensionSetting(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected() ? "true" : "false");
     }
 
     private void loadExtensionSettings()
@@ -359,6 +405,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             logger.error("Failed to load saved profiles");
         }
 
+        setDefaultProfileName(this.callbacks.loadExtensionSetting(SETTING_DEFAULT_PROFILE_NAME));
+
         String setting = this.callbacks.loadExtensionSetting(SETTING_PERSISTENT_PROFILES);
         if ((setting != null) && setting.toLowerCase().equals("true")) {
             this.persistProfilesCheckBox.setSelected(true);
@@ -367,19 +415,24 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         if ((setting == null) || setting.toLowerCase().equals("true")) {
             this.signingEnabledCheckBox.setSelected(true);
         }
-        setDefaultProfileName(this.callbacks.loadExtensionSetting(SETTING_DEFAULT_PROFILE_NAME));
-        final String customHeaderText = this.callbacks.loadExtensionSetting(SETTING_CUSTOM_HEADERS);
-        if (customHeaderText != null) {
-            setCustomHeadersInUI(customHeaderText);
+        setting = this.callbacks.loadExtensionSetting(SETTING_CUSTOM_HEADERS);
+        if (setting != null) {
+            setCustomHeadersInUI(setting);
         }
-        setting = this.callbacks.loadExtensionSetting(SETTING_INSCOPE_ONLY);
+        setting = this.callbacks.loadExtensionSetting(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES);
+        if (setting != null) {
+            this.additionalSignedHeadersField.setText(setting);
+        }
+
+        setting = this.callbacks.loadExtensionSetting(SETTING_IN_SCOPE_ONLY);
         if ((setting != null) && setting.toLowerCase().equals("true")) {
             this.inScopeOnlyCheckBox.setSelected(true);
         }
     }
 
     @Override
-    public IMessageEditorTab createNewInstance(IMessageEditorController controller, boolean editable) {
+    public IMessageEditorTab createNewInstance(IMessageEditorController controller, boolean editable)
+    {
         return new AWSMessageEditorTab(controller, editable, this, this.callbacks, this.logger);
     }
 
@@ -397,18 +450,22 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     }
 
     @Override
-    public Component getUiComponent() {
+    public Component getUiComponent()
+    {
         return outerOuterPanel;
     }
 
-    public List<JMenuItem> getContextMenuItems() {
+    public List<JMenuItem> getContextMenuItems()
+    {
         JMenu menu = new JMenu("AWSig");
 
         // add disable item
         JRadioButtonMenuItem item = new JRadioButtonMenuItem("Disable AWSig", !isSigningEnabled());
-        item.addActionListener(new ActionListener() {
+        item.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 signingEnabledCheckBox.setSelected(false);
             }
         });
@@ -419,10 +476,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         for (final String name : profileList) {
             item = new JRadioButtonMenuItem(name, isSigningEnabled() && name.equals(getDefaultProfileName()));
-            item.addActionListener(new ActionListener() {
+            item.addActionListener(new ActionListener()
+            {
                 @Override
-                public void actionPerformed(ActionEvent actionEvent) {
-                    JRadioButtonMenuItem item = (JRadioButtonMenuItem)actionEvent.getSource();
+                public void actionPerformed(ActionEvent actionEvent)
+                {
+                    JRadioButtonMenuItem item = (JRadioButtonMenuItem) actionEvent.getSource();
                     setDefaultProfileName(item.getText());
                     signingEnabledCheckBox.setSelected(true);
                 }
@@ -438,7 +497,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     // display status message in UI
     private void updateStatus(final String status)
     {
-        logger.debug("Set Status: "+status);
+        logger.debug("Set Status: " + status);
         this.statusLabel.setText(status);
     }
 
@@ -447,9 +506,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     */
     private void updateAwsProfiles()
     {
-        DefaultTableModel model = (DefaultTableModel)this.profileTable.getModel();
+        DefaultTableModel model = (DefaultTableModel) this.profileTable.getModel();
         model.setRowCount(0); // clear table
-        final String defaultProfileName = (String)defaultProfileComboBox.getSelectedItem();
+        final String defaultProfileName = (String) defaultProfileComboBox.getSelectedItem();
         defaultProfileComboBox.removeAllItems();
         defaultProfileComboBox.addItem(NO_DEFAULT_PROFILE);
 
@@ -459,7 +518,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         for (final String name : profileNames) {
             AWSProfile profile = this.profileNameMap.get(name);
-            model.addRow(new Object[] {profile.name, profile.accessKeyId, profile.secretKey, profile.region, profile.service});
+            model.addRow(new Object[]{profile.name, profile.accessKeyId, profile.secretKey, profile.region, profile.service});
             defaultProfileComboBox.addItem(name);
         }
         setDefaultProfileName(defaultProfileName);
@@ -538,13 +597,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         import creds from well-known path. if path does not exist, prompt user. last imported profile
         will become the default.
         */
-        Path credPath = Paths.get(System.getProperty("user.home"),".aws", "credentials");
+        Path credPath = Paths.get(System.getProperty("user.home"), ".aws", "credentials");
         if (!Files.exists(credPath)) {
             JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
             chooser.setFileHidingEnabled(false);
             if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
                 credPath = Paths.get(chooser.getSelectedFile().getPath());
-            } else {
+            }
+            else {
                 return;
             }
         }
@@ -553,7 +613,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         int count = 0;
         for (AWSProfile profile : AWSProfile.fromCredentialPath(credPath)) {
             if (addProfile(profile)) {
-                logger.info("Imported profile: "+profile);
+                logger.info("Imported profile: " + profile);
                 count += 1;
             }
         }
@@ -562,7 +622,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         AWSProfile profile = AWSProfile.fromEnvironment();
         if (profile != null) {
             if (addProfile(profile)) {
-                logger.info("Imported profile: "+profile);
+                logger.info("Imported profile: " + profile);
                 count += 1;
             }
         }
@@ -572,7 +632,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     /*
     Check if the request is for AWS. Can be POST or GET request.
     */
-    public static boolean isAwsRequest(IRequestInfo request) {
+    public static boolean isAwsRequest(IRequestInfo request)
+    {
         // all AWS requests require x-amz-date either in the query string or as a header. Date can be used but is not unique enough.
         // Consider adding additional check for Authorization header or X-Amz-Credential query string param.
         // https://docs.aws.amazon.com/general/latest/gr/sigv4-date-handling.html
@@ -600,13 +661,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
         logger.debug("Request Headers");
         for (String header : request.getHeaders()) {
-            logger.debug("+"+header);
+            logger.debug("+" + header);
         }
     }
 
     private String getDefaultProfileName()
     {
-        String defaultProfileName = (String)this.defaultProfileComboBox.getSelectedItem();
+        String defaultProfileName = (String) this.defaultProfileComboBox.getSelectedItem();
         if (defaultProfileName == null) {
             defaultProfileName = NO_DEFAULT_PROFILE;
         }
@@ -636,14 +697,19 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return profile;
     }
 
+    private List<String> getAdditionalSignedHeadersFromUI()
+    {
+        return Arrays.asList(additionalSignedHeadersField.getText().split(",+"));
+    }
+
     /* get the additional headers specified in the UI */
-    private ArrayList<String> getCustomHeadersFromUI()
+    private List<String> getCustomHeadersFromUI()
     {
         ArrayList<String> headers = new ArrayList<>();
         DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
         for (int i = 0; i < model.getRowCount(); i++) {
-            final String name = (String)model.getValueAt(i, 0);
-            final String value = (String)model.getValueAt(i, 1);
+            final String name = (String) model.getValueAt(i, 0);
+            final String value = (String) model.getValueAt(i, 1);
             if (!name.equals("")) { // skip empty header names
                 headers.add(String.format("%s: %s", name, value));
             }
@@ -679,6 +745,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         // add any user-specified, custom HTTP headers
         signedRequest.addSignedHeaders(getCustomHeadersFromUI());
 
+        // add names of additional headers to sign
+        signedRequest.addSignedHeaderNames(getAdditionalSignedHeadersFromUI());
+
         signedRequest.applyProfile(profile);
         return profile;
     }
@@ -691,7 +760,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
             // check request scope
             if (this.inScopeOnlyCheckBox.isSelected() && !this.callbacks.isInScope(request.getUrl())) {
-                logger.debug("Skipping out of scope request: "+request.getUrl());
+                logger.debug("Skipping out of scope request: " + request.getUrl());
                 return;
             }
 
@@ -707,7 +776,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
                 byte[] requestBytes = signedRequest.getSignedRequestBytes(profile.secretKey);
                 if (requestBytes != null) {
-                    logger.info("Signed request with profile: "+profile);
+                    logger.info("Signed request with profile: " + profile);
                     messageInfo.setRequest(requestBytes);
                 }
             }
