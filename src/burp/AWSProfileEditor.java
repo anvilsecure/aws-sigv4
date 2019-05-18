@@ -56,7 +56,7 @@ public class AWSProfileEditor {
         outerPanel.add(serviceTextField, newConstraint(1, 4));
 
         JLabel statusLabel = new JLabel("Ok to submit");
-        statusLabel.setForeground(burp.orange);
+        statusLabel.setForeground(burp.textOrange);
         JButton okButton = new JButton("Ok");
         JButton cancelButton = new JButton("Cancel");
 

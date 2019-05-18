@@ -1,7 +1,6 @@
 package burp;
 
 import javax.swing.*;
-import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -43,35 +42,31 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JTextField additionalSignedHeadersField;
 
     public JFrame outerFrame;
-    private JPanel outerOuterPanel;
     private JTable profileTable;
     private JTable customHeadersTable;
+    private JScrollPane outerScrollPane;
 
-    protected static Color orange; // mimic burp UI
+    // mimic burp colors
+    protected static final Color textOrange = new Color(255, 102, 51);
+    protected static final Color darkOrange = new Color(226, 73, 33);
 
     public BurpExtender()
     {
     }
 
-    private TitledBorder createTitledBorder(final String title)
-    {
-        TitledBorder border = new TitledBorder(title);
-        border.setTitleColor(this.orange);
-        return border;
-    }
-
     private void buildUiTab()
     {
-        orange = new Color(244, 116, 66);
+        final Font sectionFont = new JLabel().getFont().deriveFont(Font.BOLD, 15);
         outerFrame = new JFrame(); // target for dialog location
 
-        JPanel outerPanel = new JPanel();
-        outerPanel.setLayout(new GridBagLayout());
-
+        //
         // global settings, checkboxes
+        //
         JPanel globalSettingsPanel = new JPanel();
-        globalSettingsPanel.setLayout(new GridLayout(2, 3));
-        globalSettingsPanel.setBorder(createTitledBorder("Settings"));
+        globalSettingsPanel.setLayout(new GridBagLayout());
+        JLabel settingsLabel = new JLabel("Settings");
+        settingsLabel.setForeground(this.textOrange);
+        settingsLabel.setFont(sectionFont);
         JPanel checkBoxPanel = new JPanel();
         signingEnabledCheckBox = new JCheckBox("Signing Enabled");
         signingEnabledCheckBox.setToolTipText("Disable SigV4 signing");
@@ -89,16 +84,32 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         otherSettingsPanel.add(logLevelComboBox);
         otherSettingsPanel.add(new JLabel("Default Profile"));
         otherSettingsPanel.add(defaultProfileComboBox);
-        globalSettingsPanel.add(checkBoxPanel);
-        globalSettingsPanel.add(otherSettingsPanel);
 
+        GridBagConstraints c00 = new GridBagConstraints(); c00.anchor = GridBagConstraints.FIRST_LINE_START; c00.gridy = 0; c00.gridwidth = 2;
+        GridBagConstraints c01 = new GridBagConstraints(); c01.anchor = GridBagConstraints.FIRST_LINE_START; c01.gridy = 1; c01.gridwidth = 2; c01.insets = new Insets(10, 0, 10, 0);
+        GridBagConstraints c02 = new GridBagConstraints(); c02.anchor = GridBagConstraints.FIRST_LINE_START; c02.gridy = 2;
+        GridBagConstraints c03 = new GridBagConstraints(); c03.anchor = GridBagConstraints.FIRST_LINE_START; c03.gridy = 3;
+
+        globalSettingsPanel.add(settingsLabel, c00);
+        globalSettingsPanel.add(new JLabel("Change plugin behavior. Set \"Default Profile\" to force certain credentials to be used to sign requests."), c01);
+        globalSettingsPanel.add(checkBoxPanel, c02);
+        globalSettingsPanel.add(otherSettingsPanel, c03);
+
+        //
         // status label
+        //
         JPanel statusPanel = new JPanel();
         statusLabel = new JLabel();
         statusPanel.add(statusLabel);
 
+        //
         // profiles table
-        JPanel profilePanel = new JPanel();
+        //
+        JPanel profilePanel = new JPanel(new GridBagLayout());
+        JLabel profileLabel = new JLabel("AWS Credentials");
+        profileLabel.setForeground(this.textOrange);
+        profileLabel.setFont(sectionFont);
+
         JButton addProfileButton = new JButton("Add");
         JButton editProfileButton = new JButton("Edit");
         JButton removeProfileButton = new JButton("Remove");
@@ -112,7 +123,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         profileButtonPanel.add(makeDefaultButton);
         profileButtonPanel.add(importProfileButton);
 
-        String[] profileColumnNames = {"Name", "KeyId", "SecretKey", "Region", "Service"};
+        final String[] profileColumnNames = {"Name", "KeyId", "SecretKey", "Region", "Service"};
         profileTable = new JTable(new DefaultTableModel(profileColumnNames, 0)
         {
             @Override
@@ -125,19 +136,22 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         JScrollPane profileScrollPane = new JScrollPane(profileTable);
         profileScrollPane.setPreferredSize(new Dimension(1000, 200));
-        profilePanel.setBorder(createTitledBorder("AWS Profiles"));
-        profilePanel.add(profileButtonPanel);
-        profilePanel.add(profileScrollPane);
+        GridBagConstraints c000 = new GridBagConstraints(); c000.gridy = 0; c000.gridwidth = 2; c000.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c001 = new GridBagConstraints(); c001.gridy = 1; c001.gridwidth = 2; c001.anchor = GridBagConstraints.FIRST_LINE_START; c001.insets = new Insets(10, 0, 10, 0);
+        GridBagConstraints c002 = new GridBagConstraints(); c002.gridy = 2; c002.gridx = 0; c002.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c003 = new GridBagConstraints(); c003.gridy = 2; c003.gridx = 1; c003.anchor = GridBagConstraints.FIRST_LINE_START;
+        profilePanel.add(profileLabel, c000);
+        profilePanel.add(new JLabel("Add AWS credentials using your \"aws_access_key_id\" and \"aws_secret_access_key\"."), c001);
+        profilePanel.add(profileButtonPanel, c002);
+        profilePanel.add(profileScrollPane, c003);
 
-        // additional headers to sign
-        JPanel additionalSignedHeadersPanel = new JPanel();
-        additionalSignedHeadersPanel.setBorder(createTitledBorder("Signed Headers"));
-        additionalSignedHeadersField = new JTextField("", 65);
-        additionalSignedHeadersField.setToolTipText("Comma-separated list of additional header names to sign");
-        additionalSignedHeadersPanel.add(additionalSignedHeadersField);
-
+        //
         // custom signed headers table
-        JPanel customHeadersPanel = new JPanel();
+        //
+        JPanel customHeadersPanel = new JPanel(new GridBagLayout());
+        JLabel customHeadersLabel = new JLabel("Custom Signed Headers");
+        customHeadersLabel.setForeground(this.textOrange);
+        customHeadersLabel.setFont(sectionFont);
         JPanel customHeadersButtonPanel = new JPanel();
         customHeadersButtonPanel.setLayout(new GridLayout(3, 1));
         JButton addCustomHeaderButton = new JButton("Add");
@@ -147,40 +161,67 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         //customHeadersButtonPanel.add(editCustomHeaderButton); // edit in-place in table
         customHeadersButtonPanel.add(removeCustomHeaderButton);
 
-        String[] headersColumnNames = {"Name", "Value"};
+        final String[] headersColumnNames = {"Name", "Value"};
         customHeadersTable = new JTable(new DefaultTableModel(headersColumnNames, 0));
         JScrollPane headersScrollPane = new JScrollPane(customHeadersTable);
         headersScrollPane.setPreferredSize(new Dimension(1000, 200));
 
-        customHeadersPanel.setBorder(createTitledBorder("Custom Signed Headers"));
-        customHeadersPanel.add(customHeadersButtonPanel);
-        customHeadersPanel.add(headersScrollPane);
+        GridBagConstraints c100 = new GridBagConstraints(); c100.gridy = 0; c100.gridwidth = 2; c100.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c101 = new GridBagConstraints(); c101.gridy = 1; c101.gridwidth = 2; c101.anchor = GridBagConstraints.FIRST_LINE_START; c101.insets = new Insets(10, 0, 10, 0);
+        GridBagConstraints c102 = new GridBagConstraints(); c102.gridy = 2; c102.gridx = 0; c102.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c103 = new GridBagConstraints(); c103.gridy = 2; c103.gridx = 1; c103.anchor = GridBagConstraints.FIRST_LINE_START;
+        customHeadersPanel.add(customHeadersLabel, c100);
+        customHeadersPanel.add(new JLabel("Add request headers to be included in the signature."), c101);
+        customHeadersPanel.add(customHeadersButtonPanel, c102);
+        customHeadersPanel.add(headersScrollPane, c103);
 
+        //
+        // additional headers to sign
+        //
+        JPanel additionalSignedHeadersPanel = new JPanel(new GridBagLayout());
+        JLabel additionalHeadersLabel = new JLabel("Signed Headers");
+        additionalHeadersLabel.setForeground(this.textOrange);
+        additionalHeadersLabel.setFont(sectionFont);
+        additionalSignedHeadersField = new JTextField("", 65);
+        GridBagConstraints c200 = new GridBagConstraints(); c200.gridy = 0; c200.gridwidth = 2; c200.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c201 = new GridBagConstraints(); c201.gridy = 1; c201.gridwidth = 2; c201.anchor = GridBagConstraints.FIRST_LINE_START; c201.insets = new Insets(10, 0, 10, 0);
+        GridBagConstraints c202 = new GridBagConstraints(); c202.gridy = 2; c202.anchor = GridBagConstraints.FIRST_LINE_START;
+        additionalSignedHeadersPanel.add(additionalHeadersLabel, c200);
+        additionalSignedHeadersPanel.add(new JLabel("Specify comma-separated headers in the original request to include in the signature."), c201);
+        additionalSignedHeadersPanel.add(additionalSignedHeadersField, c202);
 
+        //
         // put it all together
-        GridBagConstraints c1 = new GridBagConstraints();
-        c1.gridy = 0;
-        c1.anchor = GridBagConstraints.FIRST_LINE_START;
-        GridBagConstraints c2 = new GridBagConstraints();
-        c2.gridy = 1;
-        c2.anchor = GridBagConstraints.FIRST_LINE_START;
-        GridBagConstraints c3 = new GridBagConstraints();
-        c3.gridy = 2;
-        c3.anchor = GridBagConstraints.FIRST_LINE_START;
-        GridBagConstraints c4 = new GridBagConstraints();
-        c4.gridy = 3;
-        c4.anchor = GridBagConstraints.FIRST_LINE_START;
-        GridBagConstraints c5 = new GridBagConstraints();
-        c5.gridy = 4;
-        c5.anchor = GridBagConstraints.FIRST_LINE_START;
+        //
+        List<GridBagConstraints> sectionConstraints = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            GridBagConstraints c = new GridBagConstraints();
+            c.gridy = i;
+            c.gridx = 0;
+            c.insets = new Insets(10, 0, 10, 0);
+            c.anchor = GridBagConstraints.FIRST_LINE_START;
+            sectionConstraints.add(c);
+        }
 
-        outerPanel.add(globalSettingsPanel, c1);
-        outerPanel.add(statusPanel, c2);
-        outerPanel.add(profilePanel, c3);
-        outerPanel.add(customHeadersPanel, c5);
-        outerPanel.add(additionalSignedHeadersPanel, c4);
+        JPanel outerPanel = new JPanel();
+        outerPanel.setLayout(new GridBagLayout());
+        outerPanel.add(globalSettingsPanel, sectionConstraints.remove(0));
+        GridBagConstraints c = sectionConstraints.remove(0);
+        c.fill = GridBagConstraints.HORIZONTAL;
+        outerPanel.add(new JSeparator(SwingConstants.HORIZONTAL), c);
+        ////outerPanel.add(statusPanel, sectionConstraints.remove(0));
+        outerPanel.add(profilePanel, sectionConstraints.remove(0));
+        c = sectionConstraints.remove(0);
+        c.fill = GridBagConstraints.HORIZONTAL;
+        outerPanel.add(new JSeparator(SwingConstants.HORIZONTAL), c);
+        outerPanel.add(customHeadersPanel, sectionConstraints.remove(0));
+        c = sectionConstraints.remove(0);
+        c.fill = GridBagConstraints.HORIZONTAL;
+        outerPanel.add(new JSeparator(SwingConstants.HORIZONTAL), c);
+        outerPanel.add(additionalSignedHeadersPanel, sectionConstraints.remove(0));
 
-        outerOuterPanel = new JPanel();
+        JPanel outerOuterPanel = new JPanel(new FlowLayout(FlowLayout.LEADING));
+        outerScrollPane = new JScrollPane(outerOuterPanel);
         outerOuterPanel.add(outerPanel);
 
         this.callbacks.customizeUiComponent(outerOuterPanel);
@@ -452,7 +493,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public Component getUiComponent()
     {
-        return outerOuterPanel;
+        return outerScrollPane;
     }
 
     public List<JMenuItem> getContextMenuItems()
