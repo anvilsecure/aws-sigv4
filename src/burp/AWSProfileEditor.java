@@ -55,7 +55,7 @@ public class AWSProfileEditor {
         JTextField serviceTextField = new JTextField("", 40);
         outerPanel.add(serviceTextField, newConstraint(1, 4));
 
-        JLabel statusLabel = new JLabel("Ok to submit");
+        JLabel statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
         statusLabel.setForeground(burp.textOrange);
         JButton okButton = new JButton("Ok");
         JButton cancelButton = new JButton("Cancel");
@@ -80,7 +80,7 @@ public class AWSProfileEditor {
                     dialog.setVisible(false);
                 }
                 else {
-                    statusLabel.setText("Invalid settings. Ensure keyId is unique and name is not empty.");
+                    statusLabel.setText("<html><i>Invalid settings. Ensure keyId is unique and name is not empty.</i></html>");
                 }
             }
         });

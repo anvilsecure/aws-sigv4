@@ -91,7 +91,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c03 = new GridBagConstraints(); c03.anchor = GridBagConstraints.FIRST_LINE_START; c03.gridy = 3;
 
         globalSettingsPanel.add(settingsLabel, c00);
-        globalSettingsPanel.add(new JLabel("Change plugin behavior. Set \"Default Profile\" to force certain credentials to be used to sign requests."), c01);
+        globalSettingsPanel.add(new JLabel("<html>Change plugin behavior. Set <i>Default Profile</i> to force certain credentials to be used to sign requests."), c01);
         globalSettingsPanel.add(checkBoxPanel, c02);
         globalSettingsPanel.add(otherSettingsPanel, c03);
 
@@ -141,7 +141,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c002 = new GridBagConstraints(); c002.gridy = 2; c002.gridx = 0; c002.anchor = GridBagConstraints.FIRST_LINE_START;
         GridBagConstraints c003 = new GridBagConstraints(); c003.gridy = 2; c003.gridx = 1; c003.anchor = GridBagConstraints.FIRST_LINE_START;
         profilePanel.add(profileLabel, c000);
-        profilePanel.add(new JLabel("Add AWS credentials using your \"aws_access_key_id\" and \"aws_secret_access_key\"."), c001);
+        profilePanel.add(new JLabel("<html>Add AWS credentials using your <i>aws_access_key_id</i> and <i>aws_secret_access_key</i>.</html>"), c001);
         profilePanel.add(profileButtonPanel, c002);
         profilePanel.add(profileScrollPane, c003);
 
@@ -171,7 +171,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c102 = new GridBagConstraints(); c102.gridy = 2; c102.gridx = 0; c102.anchor = GridBagConstraints.FIRST_LINE_START;
         GridBagConstraints c103 = new GridBagConstraints(); c103.gridy = 2; c103.gridx = 1; c103.anchor = GridBagConstraints.FIRST_LINE_START;
         customHeadersPanel.add(customHeadersLabel, c100);
-        customHeadersPanel.add(new JLabel("Add request headers to be included in the signature."), c101);
+        customHeadersPanel.add(new JLabel("Add request headers to be included in the signature. These can be edited in place."), c101);
         customHeadersPanel.add(customHeadersButtonPanel, c102);
         customHeadersPanel.add(headersScrollPane, c103);
 
@@ -198,16 +198,17 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             GridBagConstraints c = new GridBagConstraints();
             c.gridy = i;
             c.gridx = 0;
-            c.insets = new Insets(10, 0, 10, 0);
+            // add padding in all directions
+            c.insets = new Insets(10, 10, 10, 10);
             c.anchor = GridBagConstraints.FIRST_LINE_START;
+            c.weightx = 1.0;
             sectionConstraints.add(c);
         }
 
-        JPanel outerPanel = new JPanel();
-        outerPanel.setLayout(new GridBagLayout());
+        JPanel outerPanel = new JPanel(new GridBagLayout());
         outerPanel.add(globalSettingsPanel, sectionConstraints.remove(0));
         GridBagConstraints c = sectionConstraints.remove(0);
-        c.fill = GridBagConstraints.HORIZONTAL;
+        c.fill = GridBagConstraints.HORIZONTAL; // have separator span entire width of display
         outerPanel.add(new JSeparator(SwingConstants.HORIZONTAL), c);
         ////outerPanel.add(statusPanel, sectionConstraints.remove(0));
         outerPanel.add(profilePanel, sectionConstraints.remove(0));
@@ -220,11 +221,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         outerPanel.add(new JSeparator(SwingConstants.HORIZONTAL), c);
         outerPanel.add(additionalSignedHeadersPanel, sectionConstraints.remove(0));
 
-        JPanel outerOuterPanel = new JPanel(new FlowLayout(FlowLayout.LEADING));
+        // use outerOuterPanel to force components north
+        JPanel outerOuterPanel = new JPanel(new BorderLayout());
+        outerOuterPanel.add(outerPanel, BorderLayout.PAGE_START);
         outerScrollPane = new JScrollPane(outerOuterPanel);
-        outerOuterPanel.add(outerPanel);
+        outerScrollPane.getVerticalScrollBar().setUnitIncrement(18);
 
-        this.callbacks.customizeUiComponent(outerOuterPanel);
+        this.callbacks.customizeUiComponent(outerPanel);
 
         // profile button handlers
         addProfileButton.addActionListener(new ActionListener()
