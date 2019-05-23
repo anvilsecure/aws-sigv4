@@ -30,7 +30,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private IBurpExtenderCallbacks callbacks;
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, AWSProfile> profileNameMap; // map accessKeyId to profile
-    private LogWriter logger;
+    protected LogWriter logger;
     private AWSContextMenu contextMenu;
 
     private JLabel statusLabel;
@@ -294,7 +294,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                importProfiles();
+                try {
+                    AWSProfileImportDialog importDialog = new AWSProfileImportDialog(outerFrame, "Import Profiles", true, BurpExtender.this);
+                    callbacks.customizeUiComponent(importDialog);
+                    importDialog.setVisible(true);
+                }
+                catch (Exception exc) {
+                    logger.error("Failed to display import dialog: "+exc);
+                }
             }
         });
 
