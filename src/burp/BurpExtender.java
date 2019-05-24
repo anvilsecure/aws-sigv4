@@ -41,7 +41,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JCheckBox inScopeOnlyCheckBox;
     private JTextField additionalSignedHeadersField;
 
-    public JFrame outerFrame;
     private JTable profileTable;
     private JTable customHeadersTable;
     private JScrollPane outerScrollPane;
@@ -57,7 +56,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private void buildUiTab()
     {
         final Font sectionFont = new JLabel().getFont().deriveFont(Font.BOLD, 15);
-        outerFrame = new JFrame(); // target for dialog location
 
         //
         // global settings, checkboxes
@@ -115,8 +113,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JButton removeProfileButton = new JButton("Remove");
         JButton makeDefaultButton = new JButton("Default");
         JButton importProfileButton = new JButton("Import");
-        JPanel profileButtonPanel = new JPanel();
-        profileButtonPanel.setLayout(new GridLayout(5, 1));
+        JPanel profileButtonPanel = new JPanel(new GridLayout(5, 1));
         profileButtonPanel.add(addProfileButton);
         profileButtonPanel.add(editProfileButton);
         profileButtonPanel.add(removeProfileButton);
@@ -235,7 +232,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                JDialog dialog = AWSProfileEditor.getAddProfileDialog(BurpExtender.this, null);
+                JDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null, BurpExtender.this);
                 callbacks.customizeUiComponent(dialog);
                 dialog.setVisible(true);
             }
@@ -249,7 +246,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 if (rowIndeces.length == 1) {
                     DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
-                    JDialog dialog = AWSProfileEditor.getAddProfileDialog(BurpExtender.this, profileNameMap.get(name));
+                    JDialog dialog = new AWSProfileEditorDialog(null, "Edit Profile", true, profileNameMap.get(name), BurpExtender.this);
                     callbacks.customizeUiComponent(dialog);
                     dialog.setVisible(true);
                 }
@@ -295,7 +292,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             public void actionPerformed(ActionEvent actionEvent)
             {
                 try {
-                    AWSProfileImportDialog importDialog = new AWSProfileImportDialog(outerFrame, "Import Profiles", true, BurpExtender.this);
+                    AWSProfileImportDialog importDialog = new AWSProfileImportDialog(null, "Import Profiles", true, BurpExtender.this);
                     callbacks.customizeUiComponent(importDialog);
                     importDialog.setVisible(true);
                 }
@@ -508,10 +505,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     public List<JMenuItem> getContextMenuItems()
     {
-        JMenu menu = new JMenu("AWSig");
+        JMenu menu = new JMenu("SigV4");
 
         // add disable item
-        JRadioButtonMenuItem item = new JRadioButtonMenuItem("Disable AWSig", !isSigningEnabled());
+        JRadioButtonMenuItem item = new JRadioButtonMenuItem("<html><i>Disabled</i></html>", !isSigningEnabled());
         item.addActionListener(new ActionListener()
         {
             @Override

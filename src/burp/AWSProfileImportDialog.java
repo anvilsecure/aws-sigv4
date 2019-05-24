@@ -43,6 +43,7 @@ public class AWSProfileImportDialog extends JDialog
         setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
         JPanel outerPanel = new JPanel(new GridBagLayout());
+        outerPanel.setBorder(new TitledBorder(""));
 
         // import from file buttons
         JPanel importButtonPanel = new JPanel();
@@ -134,7 +135,7 @@ public class AWSProfileImportDialog extends JDialog
         profileTable.getColumnModel().getColumn(SELECT_COLUMN_INDEX).setMaxWidth(60);
         profileTable.getColumnModel().getColumn(NAME_COLUMN_INDEX).setMinWidth(150);
         profileTable.getColumnModel().getColumn(NAME_COLUMN_INDEX).setMaxWidth(300);
-        profileTable.getColumnModel().getColumn(KEYID_COLUMN_INDEX).setMinWidth(150);
+        profileTable.getColumnModel().getColumn(KEYID_COLUMN_INDEX).setMinWidth(220);
         profileTable.getColumnModel().getColumn(KEYID_COLUMN_INDEX).setMaxWidth(300);
         JScrollPane profileScrollPane = new JScrollPane(profileTable);
         profileScrollPane.setPreferredSize(new Dimension(900, 200));
@@ -165,21 +166,22 @@ public class AWSProfileImportDialog extends JDialog
         GridBagConstraints c00 = new GridBagConstraints();
         c00.anchor = GridBagConstraints.FIRST_LINE_START;
         c00.gridy = 0;
-        c00.gridwidth = 2;
         GridBagConstraints c01 = new GridBagConstraints();
         c01.gridy = 1;
-        c01.gridwidth = 1;
         GridBagConstraints c02 = new GridBagConstraints();
-        c02.anchor = GridBagConstraints.FIRST_LINE_START;
         c02.gridy = 2;
-        c02.gridwidth = 1;
+        GridBagConstraints c03 = new GridBagConstraints();
+        c03.gridy = 3;
+        JLabel hintLabel = new JLabel("<html><i>Ok to import selected profiles</i></html>");
+        hintLabel.setForeground(this.burp.textOrange);
         outerPanel.add(topButtonPanel, c00);
         outerPanel.add(profileScrollPane, c01);
-        outerPanel.add(lowerButtonPanel, c02);
+        outerPanel.add(hintLabel, c02);
+        outerPanel.add(lowerButtonPanel, c03);
 
         add(outerPanel);
         pack();
-        setLocationRelativeTo(burp.outerFrame);
+        setLocationRelativeTo(burp.getUiComponent());
     }
 
     public void addSelectedProfiles()

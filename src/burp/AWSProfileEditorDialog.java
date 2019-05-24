@@ -6,9 +6,11 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
-public class AWSProfileEditor {
+public class AWSProfileEditorDialog extends JDialog
+{
 
-    private static GridBagConstraints newConstraint(int gridx, int gridy, int gridwidth, int gridheight) {
+    private static GridBagConstraints newConstraint(int gridx, int gridy, int gridwidth, int gridheight)
+    {
         GridBagConstraints c = new GridBagConstraints();
         c.gridy = gridy;
         c.gridx = gridx;
@@ -17,13 +19,15 @@ public class AWSProfileEditor {
         return c;
     }
 
-    private static GridBagConstraints newConstraint(int gridx, int gridy, int anchor) {
+    private static GridBagConstraints newConstraint(int gridx, int gridy, int anchor)
+    {
         GridBagConstraints c = newConstraint(gridx, gridy, 1, 1);
         c.anchor = anchor;
         return c;
     }
 
-    private static GridBagConstraints newConstraint(int gridx, int gridy) {
+    private static GridBagConstraints newConstraint(int gridx, int gridy)
+    {
         return newConstraint(gridx, gridy, 1, 1);
     }
 
@@ -31,10 +35,10 @@ public class AWSProfileEditor {
     return a dialog with a form for editing profiles. optional profile param can be used to populate the form.
     set profile to null for a create form.
      */
-    public static JDialog getAddProfileDialog(BurpExtender burp, AWSProfile profile) {
-
-        JDialog dialog = new JDialog(burp.outerFrame, "Add/Edit Profile", true);
-        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+    public AWSProfileEditorDialog(Frame owner, String title, boolean modal, AWSProfile profile, BurpExtender burp)
+    {
+        super(owner, title, modal);
+        setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
         JPanel outerPanel = new JPanel(new GridBagLayout());
         outerPanel.setBorder(new TitledBorder(""));
@@ -66,18 +70,23 @@ public class AWSProfileEditor {
         outerPanel.add(statusLabel, newConstraint(0, 5, 2, 1));
         outerPanel.add(buttonPanel, newConstraint(0, 6, 2, 1));
 
-        cancelButton.addActionListener(new ActionListener() {
+        cancelButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
-                dialog.setVisible(false);
+            public void actionPerformed(ActionEvent actionEvent)
+            {
+                setVisible(false);
             }
         });
-        okButton.addActionListener(new ActionListener() {
+        okButton.addActionListener(new ActionListener()
+        {
             @Override
-            public void actionPerformed(ActionEvent actionEvent) {
+            public void actionPerformed(ActionEvent actionEvent)
+            {
                 if (burp.updateProfile(profile, new AWSProfile(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText(),
-                        regionTextField.getText(),  serviceTextField.getText()))) {
-                    dialog.setVisible(false);
+                        regionTextField.getText(), serviceTextField.getText()))) {
+                    setVisible(false);
+                    dispose();
                 }
                 else {
                     statusLabel.setText("<html><i>Invalid settings. Ensure keyId is unique and name is not empty.</i></html>");
@@ -94,9 +103,8 @@ public class AWSProfileEditor {
             serviceTextField.setText(profile.service);
         }
 
-        dialog.add(outerPanel);
-        dialog.pack();
-        dialog.setLocationRelativeTo(burp.outerFrame);
-        return dialog;
+        add(outerPanel);
+        pack();
+        setLocationRelativeTo(burp.getUiComponent());
     }
 }
