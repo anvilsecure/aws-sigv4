@@ -60,7 +60,10 @@ public class AWSProfileImportDialog extends JDialog
         autoImportButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
-                importProfilesFromFile(getAutoImportPath());
+                final Path path = getAutoImportPath();
+                if (path != null) {
+                    importProfilesFromFile(path);
+                }
                 importProfilesFromEnvironment();
             }
         });
@@ -68,7 +71,10 @@ public class AWSProfileImportDialog extends JDialog
         chooseImportButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
-                importProfilesFromFile(getChosenImportPath());
+                final Path path = getChosenImportPath();
+                if (path != null) {
+                    importProfilesFromFile(path);
+                }
             }
         });
 

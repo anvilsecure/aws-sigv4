@@ -52,3 +52,13 @@ At a minimum, a profile should contain a name, keyId, and secretKey. Outgoing re
 Region and service should almost always be left blank. This will ensure the region and service in the original request are used which is desired in most cases.
 
 Profiles will be saved in the Burp settings store, including AWS keys, if "Persist Profiles" is checked.
+
+## Screenshots
+
+Importing profiles
+
+![Importing Profiles](docs/screenshots/import-profiles-sm.png)
+
+UI tab
+
+![UI](docs/screenshots/ui-example-sm.png)
