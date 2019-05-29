@@ -113,12 +113,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JButton removeProfileButton = new JButton("Remove");
         JButton makeDefaultButton = new JButton("Default");
         JButton importProfileButton = new JButton("Import");
-        JPanel profileButtonPanel = new JPanel(new GridLayout(5, 1));
+        JButton exportProfileButton = new JButton("Export");
+        JPanel profileButtonPanel = new JPanel(new GridLayout(6, 1));
         profileButtonPanel.add(addProfileButton);
         profileButtonPanel.add(editProfileButton);
         profileButtonPanel.add(removeProfileButton);
         profileButtonPanel.add(makeDefaultButton);
         profileButtonPanel.add(importProfileButton);
+        profileButtonPanel.add(exportProfileButton);
 
         final String[] profileColumnNames = {"Name", "KeyId", "SecretKey", "Region", "Service"};
         profileTable = new JTable(new DefaultTableModel(profileColumnNames, 0)
@@ -298,6 +300,26 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 }
                 catch (Exception exc) {
                     logger.error("Failed to display import dialog: "+exc);
+                }
+            }
+        });
+        exportProfileButton.addActionListener(new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent actionEvent)
+            {
+                JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
+                chooser.setFileHidingEnabled(false);
+                if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                    final Path exportPath = Paths.get(chooser.getSelectedFile().getPath());
+                    ArrayList<AWSProfile> awsProfiles = new ArrayList<>();
+                    for (final String name : profileNameMap.keySet()) {
+                        awsProfiles.add(profileNameMap.get(name));
+                    }
+                    int exportCount = AWSProfile.exportToFilePath(awsProfiles, exportPath);
+                    final String msg = String.format("Exported %d profiles to %s", exportCount, exportPath);
+                    JOptionPane.showMessageDialog(getUiComponent(), msg);
+                    logger.info(msg);
                 }
             }
         });
@@ -575,6 +597,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     protected boolean addProfile(AWSProfile profile)
     {
+        // NOTE: validation check (via profile.isValid) is intentionally omitted here. This is so users can
+        // deliberately specify invalid values for testing purposes.
         if (profile.name.length() > 0) {
             AWSProfile p1 = this.profileNameMap.get(profile.name);
             AWSProfile p2 = this.profileKeyIdMap.get(profile.accessKeyId);

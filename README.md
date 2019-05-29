@@ -45,13 +45,21 @@ source.
 
 
 ## Usage
-Hit the "Import" button to automatically import credentials. See https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-where.
+Hit the "Import" button to import credentials from a file. See https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-where
+for expected file format. You can also manually "Add" credentials.
 
-At a minimum, a profile should contain a name, keyId, and secretKey. Outgoing requests will be signed with the profile associated with the keyId in the original request. If the keyId is not recognized, the message will be sent unmodifed. Alternatively, a "Default Profile" can be set which will be used to sign all outgoing requests regardless of the original keyId.
+At a minimum, a profile should contain a name, keyId, and secretKey. Outgoing requests
+will be signed with the profile associated with the keyId in the original request. If
+the keyId is not recognized, the message will be sent unmodifed. Alternatively, a
+"Default Profile" can be set which will be used to sign all outgoing requests regardless
+of the original keyId.
 
-Region and service should almost always be left blank. This will ensure the region and service in the original request are used which is desired in most cases.
+Region and service should almost always be left blank. This will ensure the region and
+service in the original request are used which is desired in most cases.
 
-Profiles will be saved in the Burp settings store, including AWS keys, if "Persist Profiles" is checked.
+Profiles will be saved in the Burp settings store, including AWS keys, if "Persist Profiles"
+is checked. You can also "Export" credentials to a file for importing later or for use
+with the aws cli.
 
 ## Screenshots
 
