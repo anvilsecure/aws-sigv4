@@ -204,11 +204,21 @@ public class AWSProfileImportDialog extends JDialog
 
     private void updateImportTable(ArrayList<AWSProfile> profiles, final String source)
     {
+        // preserve selection status of current profiles.
+        HashMap<String, Boolean> selectionMap =  new HashMap<>();
+        DefaultTableModel model = (DefaultTableModel) this.profileTable.getModel();
+        for (int i = 0; i < model.getRowCount(); i++) {
+            final String name = (String) model.getValueAt(i, NAME_COLUMN_INDEX);
+            selectionMap.put(name, (boolean) model.getValueAt(i, SELECT_COLUMN_INDEX));
+        }
+        model.setRowCount(0); // clear table
+
         for (AWSProfile profile : profiles) {
             this.profileNameMap.put(profile.name, new NewAWSProfile(profile, source));
+            if (!selectionMap.containsKey(profile.name)) {
+                selectionMap.put(profile.name, true);
+            }
         }
-        DefaultTableModel model = (DefaultTableModel) this.profileTable.getModel();
-        model.setRowCount(0); // clear table
 
         // sort by name in table
         List<String> profileNames = new ArrayList<>(this.profileNameMap.keySet());
@@ -216,7 +226,7 @@ public class AWSProfileImportDialog extends JDialog
 
         for (final String name : profileNames) {
             NewAWSProfile newProfile = this.profileNameMap.get(name);
-            model.addRow(new Object[]{true, newProfile.awsProfile.name, newProfile.awsProfile.accessKeyId, newProfile.source});
+            model.addRow(new Object[]{selectionMap.get(name), newProfile.awsProfile.name, newProfile.awsProfile.accessKeyId, newProfile.source});
         }
     }
 
