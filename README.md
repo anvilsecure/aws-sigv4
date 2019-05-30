@@ -46,7 +46,7 @@ source.
 
 ## Usage
 Hit the "Import" button to import credentials from a file. See https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-where
-for expected file format. You can also manually "Add" credentials.
+for expected file format. You can also manually add credentials by clicking "Add".
 
 At a minimum, a profile should contain a name, keyId, and secretKey. Outgoing requests
 will be signed with the profile associated with the keyId in the original request. If
@@ -55,18 +55,30 @@ the keyId is not recognized, the message will be sent unmodifed. Alternatively, 
 of the original keyId.
 
 Region and service should almost always be left blank. This will ensure the region and
-service in the original request are used which is desired in most cases.
+service in the original request are used which is desired in most cases. If your credential
+or config file contains a region for a named profile, that will be used.
 
 Profiles will be saved in the Burp settings store, including AWS keys, if "Persist Profiles"
 is checked. You can also "Export" credentials to a file for importing later or for use
 with the aws cli.
 
+### Environment
+https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
+
+awsig respects the following environment variables:
+- AWS_ACCESS_KEY_ID
+- AWS_SECRET_ACCESS_KEY
+- AWS_CONFIG_FILE
+- AWS_SHARED_CREDENTIALS_FILE
+
+If using the aws cli, set AWS_CA_BUNDLE to the path of your burp certificate.
+
 ## Screenshots
-
-Importing profiles
-
-![Importing Profiles](docs/screenshots/import-profiles-sm.png)
 
 UI tab
 
 ![UI](docs/screenshots/ui-example-sm.png)
+
+Importing profiles
+
+![Importing Profiles](docs/screenshots/import-profiles-sm.png)

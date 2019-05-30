@@ -4,10 +4,10 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -49,42 +49,40 @@ public class AWSProfile implements Serializable
         return null;
     }
 
-    public static ArrayList<AWSProfile> fromCredentialPath(Path path)
+    public static ArrayList<AWSProfile> fromCredentialPath(final Path path)
     {
-        String profileName = "";
-        HashMap<String, String> tmpProfile = new HashMap<>();
+        // parse credential file
         ArrayList<AWSProfile> profileList = new ArrayList<>();
-        try {
-            for (Iterator<String> i = Files.lines(path).iterator(); i.hasNext(); ) {
-                final String line = i.next().trim();
-                if (line.startsWith("[") && line.endsWith("]")) {
-                    tmpProfile.clear();
-                    profileName = line.replace("[", "").replace("]", "").trim();
-                }
-                else if (line.startsWith("aws_access_key_id")) {
-                    final String access_key = line.split("=")[1].trim();
-                    tmpProfile.put("aws_access_key_id", access_key);
-                }
-                else if (line.startsWith("aws_secret_access_key")) {
-                    final String secret_key = line.split("=")[1].trim();
-                    tmpProfile.put("aws_secret_access_key", secret_key);
-                }
-                else if (line.length() > 0) {
-                    //inf.println(String.format("Unrecognized content: '%s'", line));
-                }
+        AWSConfigParser parser = new AWSConfigParser(path);
+        HashMap<String, HashMap<String, String>> credentials = parser.parse();
 
-                if (!profileName.equals("") && tmpProfile.containsKey("aws_access_key_id") && tmpProfile.containsKey("aws_secret_access_key")) {
-                    profileList.add(new AWSProfile(
-                            profileName,
-                            tmpProfile.get("aws_access_key_id"),
-                            tmpProfile.get("aws_secret_access_key"),
-                            "",
-                            ""));
-                    tmpProfile.clear();
-                    profileName = "";
-                }
+        // get aws cli config for region info (if it exists). favor path defined in environment. fallback to default path.
+        Path configPath = Paths.get(System.getProperty("user.home"), ".aws", "config");
+        final String envFile = System.getenv("AWS_CONFIG_FILE");
+        if (envFile != null) {
+            if (Files.exists(Paths.get(envFile))) {
+                configPath = Paths.get(envFile);
             }
-        } catch (IOException exc) {
+        }
+        HashMap<String, HashMap<String, String>> config = (new AWSConfigParser(configPath)).parse();
+
+        // build profile list
+        for (final String name : credentials.keySet()) {
+            HashMap<String, String> section = credentials.get(name);
+            if (section.containsKey("aws_access_key_id") && section.containsKey("aws_secret_access_key")) {
+                String region = section.get("region");
+                if (region == null) {
+                    HashMap<String, String> profile = config.get("profile " + name);
+                    if (profile != null) {
+                        region = profile.get("region");
+                    }
+                }
+                profileList.add(new AWSProfile(
+                        name,
+                        section.get("aws_access_key_id"),
+                        section.get("aws_secret_access_key"),
+                        region == null ? "" : region, ""));
+            }
         }
         return profileList;
     }

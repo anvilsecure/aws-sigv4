@@ -232,11 +232,20 @@ public class AWSProfileImportDialog extends JDialog
 
     private Path getAutoImportPath()
     {
-        Path credPath = Paths.get(System.getProperty("user.home"), ".aws", "credentials");
-        if (!Files.exists(credPath)) {
-            credPath = null;
+        // favor path defined in environment. fallback to default path.
+        final String envFile = System.getenv("AWS_SHARED_CREDENTIALS_FILE");
+        if (envFile != null) {
+            Path credPath = Paths.get(envFile);
+            if (Files.exists(credPath)) {
+                return credPath;
+            }
         }
-        return credPath;
+
+        Path credPath = Paths.get(System.getProperty("user.home"), ".aws", "credentials");
+        if (Files.exists(credPath)) {
+            return credPath;
+        }
+        return null;
     }
 
     private Path getChosenImportPath()
