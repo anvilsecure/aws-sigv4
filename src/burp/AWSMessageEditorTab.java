@@ -52,9 +52,7 @@ public class AWSMessageEditorTab implements IMessageEditorTab
         this.content = content;
 
         try {
-            final IHttpService service = this.controller.getHttpService();
-            final IRequestInfo requestInfo = this.helpers.analyzeRequest(service, content);
-            AWSSignedRequest signedRequest = new AWSSignedRequest(requestInfo.getUrl(), this.content, this.helpers, this.logger);
+            AWSSignedRequest signedRequest = new AWSSignedRequest(this.controller.getHttpService(), this.content, this.helpers, this.logger);
             final AWSProfile profile = this.burp.customizeSignedRequest(signedRequest);
             if (profile == null) {
                 this.messageTextEditor.setText(this.helpers.stringToBytes(
