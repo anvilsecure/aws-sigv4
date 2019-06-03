@@ -252,7 +252,7 @@ public class AWSProfileImportDialog extends JDialog
     {
         JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
         chooser.setFileHidingEnabled(false);
-        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+        if (chooser.showOpenDialog(burp.getUiComponent()) == JFileChooser.APPROVE_OPTION) {
             return Paths.get(chooser.getSelectedFile().getPath());
         }
         return null;

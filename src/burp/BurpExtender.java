@@ -3,17 +3,21 @@ package burp;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.*;
-import java.util.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
+import java.util.*;
 
 
-public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory
+public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     private static final String SETTING_PROFILES = "SerializedProfileList";
     private static final String SETTING_PERSISTENT_PROFILES = "PersistentProfiles";
@@ -29,9 +33,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private IExtensionHelpers helpers;
     private IBurpExtenderCallbacks callbacks;
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
-    private HashMap<String, AWSProfile> profileNameMap; // map accessKeyId to profile
+    private HashMap<String, AWSProfile> profileNameMap; // map name to profile
     protected LogWriter logger;
-    private AWSContextMenu contextMenu;
 
     private JLabel statusLabel;
     private JCheckBox signingEnabledCheckBox;
@@ -209,7 +212,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c = sectionConstraints.remove(0);
         c.fill = GridBagConstraints.HORIZONTAL; // have separator span entire width of display
         outerPanel.add(new JSeparator(SwingConstants.HORIZONTAL), c);
-        ////outerPanel.add(statusPanel, sectionConstraints.remove(0));
+        //outerPanel.add(statusPanel, sectionConstraints.remove(0));
         outerPanel.add(profilePanel, sectionConstraints.remove(0));
         c = sectionConstraints.remove(0);
         c.fill = GridBagConstraints.HORIZONTAL;
@@ -413,9 +416,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 buildUiTab();
                 callbacks.addSuiteTab(BurpExtender.this);
                 callbacks.registerHttpListener(BurpExtender.this);
-
-                contextMenu = new AWSContextMenu(BurpExtender.this);
-                callbacks.registerContextMenuFactory(contextMenu);
+                callbacks.registerContextMenuFactory(BurpExtender.this);
                 callbacks.registerMessageEditorTabFactory(BurpExtender.this);
 
                 loadExtensionSettings();
@@ -525,7 +526,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return outerScrollPane;
     }
 
-    public List<JMenuItem> getContextMenuItems()
+    @Override
+    public List<JMenuItem> createMenuItems(IContextMenuInvocation invocation)
     {
         JMenu menu = new JMenu("SigV4");
 
@@ -541,7 +543,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         });
         menu.add(item);
 
-        ArrayList<String> profileList = new ArrayList<>(this.profileNameMap.keySet());
+        // insert "auto" profile option
+        List<String> profileList = getSortedProfileNames();
         profileList.add(0, NO_DEFAULT_PROFILE); // no default option
 
         for (final String name : profileList) {
@@ -561,6 +564,39 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         ArrayList<JMenuItem> list = new ArrayList<>();
         list.add(menu);
+
+        // add menu item to copy signed url to clipboard. this menu option is only available for GET requests.
+        // TODO: add subitems to get signed url with any profile?
+        switch (invocation.getInvocationContext()) {
+            case IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST:
+            case IContextMenuInvocation.CONTEXT_MESSAGE_VIEWER_REQUEST:
+            case IContextMenuInvocation.CONTEXT_PROXY_HISTORY:
+                IHttpRequestResponse[] messages = invocation.getSelectedMessages();
+                IRequestInfo requestInfo = helpers.analyzeRequest(messages[0]);
+                if ((messages.length > 0) && requestInfo.getMethod().toUpperCase().equals("GET") && isAwsRequest(requestInfo)) {
+                    JMenuItem signedUrlItem = new JMenuItem("Copy Signed URL");
+                    signedUrlItem.addActionListener(new ActionListener()
+                    {
+                        @Override
+                        public void actionPerformed(ActionEvent actionEvent)
+                        {
+                            AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], helpers, logger);
+                            final AWSProfile profile = customizeSignedRequest(signedRequest);
+                            String signedUrl = ""; // clear clipboard on error
+                            if (profile == null) {
+                                logger.error("Failed to apply custom settings to signed request");
+                            }
+                            else {
+                                // sign a url valid for 120 seconds. XXX consider making this configurable.
+                                signedUrl = signedRequest.getSignedUrl(profile.secretKey, 120);
+                            }
+                            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                            clipboard.setContents(new StringSelection(signedUrl), null);
+                        }
+                    });
+                    list.add(signedUrlItem);
+                }
+        }
         return list;
     }
 
@@ -571,10 +607,18 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.statusLabel.setText(status);
     }
 
+    private List<String> getSortedProfileNames()
+    {
+        // sort by name in table
+        List<String> profileNames = new ArrayList<>(this.profileNameMap.keySet());
+        Collections.sort(profileNames);
+        return profileNames;
+    }
+
     /*
     call this when profile list changes
     */
-    private void updateAwsProfiles()
+    private void updateAwsProfilesUI()
     {
         DefaultTableModel model = (DefaultTableModel) this.profileTable.getModel();
         model.setRowCount(0); // clear table
@@ -583,8 +627,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         defaultProfileComboBox.addItem(NO_DEFAULT_PROFILE);
 
         // sort by name in table
-        List<String> profileNames = new ArrayList<>(this.profileNameMap.keySet());
-        Collections.sort(profileNames);
+        List<String> profileNames = getSortedProfileNames();
 
         for (final String name : profileNames) {
             AWSProfile profile = this.profileNameMap.get(name);
@@ -614,7 +657,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
             this.profileKeyIdMap.put(profile.accessKeyId, profile);
             this.profileNameMap.put(profile.name, profile);
-            updateAwsProfiles();
+            updateAwsProfilesUI();
             if (p1 == null) {
                 updateStatus("Added profile: " + profile.name);
             }
@@ -660,45 +703,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
         this.profileKeyIdMap.remove(profile.accessKeyId);
         this.profileNameMap.remove(profile.name);
-        updateAwsProfiles();
-    }
-
-    private void importProfiles()
-    {
-        /*
-        import creds from well-known path. if path does not exist, prompt user. last imported profile
-        will become the default.
-        */
-        Path credPath = Paths.get(System.getProperty("user.home"), ".aws", "credentials");
-        if (!Files.exists(credPath)) {
-            JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
-            chooser.setFileHidingEnabled(false);
-            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                credPath = Paths.get(chooser.getSelectedFile().getPath());
-            }
-            else {
-                return;
-            }
-        }
-        logger.info("Importing AWS credentials from: " + credPath);
-
-        int count = 0;
-        for (AWSProfile profile : AWSProfile.fromCredentialPath(credPath)) {
-            if (addProfile(profile)) {
-                logger.info("Imported profile: " + profile);
-                count += 1;
-            }
-        }
-
-        // try to import creds from environment variables
-        AWSProfile profile = AWSProfile.fromEnvironment();
-        if (profile != null) {
-            if (addProfile(profile)) {
-                logger.info("Imported profile: " + profile);
-                count += 1;
-            }
-        }
-        updateStatus(String.format("Imported %d profiles", count));
+        updateAwsProfilesUI();
     }
 
     /*
@@ -723,18 +728,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
 
         return false;
-    }
-
-    private void printHeaders(IRequestInfo request)
-    {
-        logger.debug("Request Parameters");
-        for (IParameter param : request.getParameters()) {
-            logger.debug(String.format("%s = %s", param.getName(), param.getValue()));
-        }
-        logger.debug("Request Headers");
-        for (String header : request.getHeaders()) {
-            logger.debug("+" + header);
-        }
     }
 
     private String getDefaultProfileName()

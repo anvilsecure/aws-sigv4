@@ -12,7 +12,7 @@ package burp;
 import java.util.List;
 
 /**
- * This interface is used to retrieve secretKey details about an HTTP response.
+ * This interface is used to retrieve key details about an HTTP response.
  * Extensions can obtain an
  * <code>IResponseInfo</code> object for a given response by calling
  * <code>IExtensionHelpers.analyzeResponse()</code>.

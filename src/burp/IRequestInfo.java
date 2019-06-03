@@ -13,7 +13,7 @@ import java.net.URL;
 import java.util.List;
 
 /**
- * This interface is used to retrieve secretKey details about an HTTP request.
+ * This interface is used to retrieve key details about an HTTP request.
  * Extensions can obtain an
  * <code>IRequestInfo</code> object for a given request by calling
  * <code>IExtensionHelpers.analyzeRequest()</code>.

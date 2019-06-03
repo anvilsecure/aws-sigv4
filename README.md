@@ -71,7 +71,7 @@ awsig respects the following environment variables:
 - AWS_CONFIG_FILE
 - AWS_SHARED_CREDENTIALS_FILE
 
-If using the aws cli, set AWS_CA_BUNDLE to the path of your burp certificate.
+If using the aws cli, set AWS_CA_BUNDLE to the path of your burp certificate (in PEM format).
 
 ## Screenshots
 

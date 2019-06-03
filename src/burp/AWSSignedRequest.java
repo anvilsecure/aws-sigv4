@@ -3,7 +3,6 @@ package burp;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.xml.bind.DatatypeConverter;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
@@ -20,19 +19,24 @@ See documentation here: https://docs.aws.amazon.com/general/latest/gr/sigv4_sign
 */
 public class AWSSignedRequest
 {
-    private final String algorithm = "AWS4-HMAC-SHA256"; // we only compute the SHA256
-    private String accessKeyId;
-    private String region;
-    private String service;
-    private Set<String> signedHeaderSet; // headers to sign
+    // set of headers to remove and update
+    private HashSet<String> updateHeaderSet = new HashSet<>(Arrays.asList(
+            "x-amz-credential", "x-amz-date", "x-amz-algorithm", "x-amz-expires", "x-amz-signedheaders", "x-amz-signature", "x-amz-content-sha256"
+    ));
 
+    private final String algorithm = "AWS4-HMAC-SHA256"; // we only compute the SHA256
+    private int queryExpirationSeconds = 60; // lifetime of a signed url in seconds
+    private String accessKeyId = "";
+    private String region = "";
+    private String service = "";
+    private Set<String> signedHeaderSet; // headers to sign
     private LogWriter logger;
     private IExtensionHelpers helpers;
     private IRequestInfo request;
     private byte[] requestBytes;
+    private IHttpService httpService;
     private String amzDate; // UTC date string for X-Amz-Date header
     private String amzDateYMD;
-    private URL originalUrl;
     private boolean signatureInHeaders = false;
 
     // regex for the "Credential" parameter in the "Authorization" header or the "X-Amz-Credential" query string param
@@ -51,7 +55,7 @@ public class AWSSignedRequest
     private void init(byte[] requestBytes)
     {
         this.requestBytes = requestBytes;
-        this.request = helpers.analyzeRequest(requestBytes);
+        this.request = helpers.analyzeRequest(this.httpService, requestBytes);
         this.signedHeaderSet = new HashSet<String>();
         // make sure required host and date headers are part of signature.
         // TODO: for http/2, we need authority header
@@ -66,12 +70,11 @@ public class AWSSignedRequest
         signatureInHeaders = parseAuthorizationHeader();
     }
 
-    public AWSSignedRequest(URL originalUrl, byte[] requestBytes, IExtensionHelpers helpers, LogWriter logger)
+    public AWSSignedRequest(IHttpService httpService, byte[] requestBytes, IExtensionHelpers helpers, LogWriter logger)
     {
         this.helpers = helpers;
         this.logger = logger;
-
-        this.originalUrl = originalUrl;
+        this.httpService = httpService;
         init(requestBytes);
     }
 
@@ -79,9 +82,7 @@ public class AWSSignedRequest
     {
         this.helpers = helpers;
         this.logger = logger;
-
-        IRequestInfo requestInfo = helpers.analyzeRequest(messageInfo);
-        this.originalUrl = requestInfo.getUrl();
+        this.httpService = messageInfo.getHttpService();
         init(messageInfo.getRequest());
     }
 
@@ -170,6 +171,13 @@ public class AWSSignedRequest
             else if (name.toLowerCase().equals("x-amz-date")) {
                 this.amzDate = value;
             }
+            else if (name.toLowerCase().equals("x-amz-expires")) {
+                try {
+                    this.queryExpirationSeconds = Integer.parseInt(value);
+                } catch (NumberFormatException exc) {
+                    this.queryExpirationSeconds = 60; // 1 minute
+                }
+            }
         }
         return true;
     }
@@ -243,7 +251,7 @@ public class AWSSignedRequest
                 headers.add(header);
             }
             this.requestBytes = this.helpers.buildHttpMessage(headers, getPayloadBytes());
-            this.request = helpers.analyzeRequest(this.requestBytes);
+            this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
         }
     }
 
@@ -252,13 +260,15 @@ public class AWSSignedRequest
     */
     public void addSignedHeaderNames(List<String> headerNames)
     {
-        this.signedHeaderSet.addAll(headerNames);
+        for (final String name : headerNames) {
+            this.signedHeaderSet.add(name.toLowerCase());
+        }
     }
 
     private String getCanonicalQueryString()
     {
         // check for empty query
-        final String queryString = this.originalUrl.getQuery();
+        final String queryString = this.request.getUrl().getQuery();
         if (queryString == null || queryString.equals("")) {
             return "";
         }
@@ -267,6 +277,9 @@ public class AWSSignedRequest
         ArrayList<IParameter> sortedParameters = new ArrayList<>();
         for (final String param : queryString.split("&")) {
             final String[] tokens = param.split("=", 2);
+            if (tokens[0].toLowerCase().equals("x-amz-signature")) {
+                continue;
+            }
             if (tokens.length == 1) {
                 sortedParameters.add(helpers.buildParameter(tokens[0], "", IParameter.PARAM_URL));
             }
@@ -292,15 +305,15 @@ public class AWSSignedRequest
                 canonicalQueryString += "&";
             }
             canonicalQueryString += String.format("%s=%s",
-                    this.helpers.urlEncode(param.getName()).replace("/", "%2f"),
-                    this.helpers.urlEncode(param.getValue()).replace("/", "%2f"));
+                    param.getName().replace("/", "%2F"),
+                    param.getValue().replace("/", "%2F"));
         }
         return canonicalQueryString;
     }
 
     private String getCanonicalUri()
     {
-        String uri = this.originalUrl.getPath();
+        String uri = this.request.getUrl().getPath();
         if (!isS3Request()) {
             // for services other than s3 the URI must be normalized by removing relative elements and duplicate path separators
             uri = uri.replaceAll("[/]{2,}", "/");
@@ -360,7 +373,7 @@ public class AWSSignedRequest
     {
         // build list of headers to sign, then sort them.
         Set<String> validSignedHeaderSet = new HashSet<>();
-        for (final String header : request.getHeaders()) {
+        for (final String header : this.request.getHeaders()) {
             final String nameLower = splitHttpHeader(header)[0].toLowerCase();
             if (this.signedHeaderSet.contains(nameLower)) {
                 validSignedHeaderSet.add(nameLower);
@@ -371,22 +384,20 @@ public class AWSSignedRequest
         return String.join(";", signedHeaderList);
     }
 
-
-    private String getPayload()
-    {
-        String payload = "";
-        if (this.request.getBodyOffset() < this.requestBytes.length) {
-            payload = new String(this.requestBytes, this.request.getBodyOffset(), this.requestBytes.length - this.request.getBodyOffset(), StandardCharsets.UTF_8);
-        }
-        return payload;
-    }
-
     private byte[] getPayloadBytes()
     {
-        if (this.request.getBodyOffset() < this.requestBytes.length) {
+        if (getPayloadSize() > 0) {
             return Arrays.copyOfRange(this.requestBytes, this.request.getBodyOffset(), this.requestBytes.length);
         }
         return new byte[]{};
+    }
+
+    private int getPayloadSize()
+    {
+        if (this.request.getBodyOffset() < this.requestBytes.length) {
+            return this.requestBytes.length - this.request.getBodyOffset();
+        }
+        return 0;
     }
 
     private String getHttpHeaderValue(final String name)
@@ -396,7 +407,7 @@ public class AWSSignedRequest
                 return splitHttpHeader(header)[1];
             }
         }
-        return "";
+        return null;
     }
 
     /*
@@ -419,9 +430,17 @@ public class AWSSignedRequest
     private String getPayloadHash()
     {
         // s3 payload signing is optional. The string "UNSIGNED-PAYLOAD" is used to signify no payload signing.
+        // if there is no payload (eg GET request) then return "UNSIGNED-PAYLOAD".
         // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
-        if (isS3Request() && getHttpHeaderValue("x-amz-content-sha256").equals("UNSIGNED-PAYLOAD")) {
-            return "UNSIGNED-PAYLOAD";
+        if (isS3Request()) {
+            if (this.request.getMethod().toUpperCase().equals("GET")) {
+                return "UNSIGNED-PAYLOAD";
+            }
+            // check if original request is unsigned
+            final String value = getHttpHeaderValue("x-amz-content-sha256");
+            if ((value == null) || (value != null && value.equals("UNSIGNED-PAYLOAD"))) {
+                return "UNSIGNED-PAYLOAD";
+            }
         }
         // hash payload (POST body)
         MessageDigest digest;
@@ -513,70 +532,67 @@ public class AWSSignedRequest
     }
 
     /*
-    update required URL parameters for signed GET requests
+    update URL parameters for signed GET requests
+    For query string params: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
     */
-    private boolean updateQueryString(final String secretKey)
+    private boolean updateQueryString(final String secretKey, final int expires)
     {
-        boolean updatedCredential = false;
-        boolean updatedDate = false;
-        boolean updatedSignature = false;
-        boolean updatedSignedHeaders = false;
-        boolean updatedSha256 = false;
-
-        // replace parameters that already exist
+        // NOTE: updateParameter is case sensitive so we remove after a lowercase name compare then re-add with proper case.
         for (IParameter param : this.request.getParameters()) {
-            final String name = helpers.urlDecode(param.getName());
-            if (name.toLowerCase().equals("x-amz-credential")) {
-                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getCredentialScope(true), IParameter.PARAM_URL));
-                updatedCredential = true;
-            }
-            else if (name.toLowerCase().equals("x-amz-date")) {
-                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, this.amzDate, IParameter.PARAM_URL));
-                updatedDate = true;
-            }
-            else if (name.toLowerCase().equals("x-amz-signature")) {
-                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getSignature(secretKey), IParameter.PARAM_URL));
-                updatedSignature = true;
-            }
-            else if (name.toLowerCase().equals("x-amz-signedheaders")) {
-                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getCanonicalSignedHeaders(), IParameter.PARAM_URL));
-                updatedSignedHeaders = true;
-            }
-            else if (name.toLowerCase().equals("x-amz-content-sha256") && isS3Request()) {
-                this.requestBytes = helpers.updateParameter(this.requestBytes, helpers.buildParameter(name, getPayloadHash(), IParameter.PARAM_URL));
-                updatedSha256 = true;
+            final String nameLower = helpers.urlDecode(param.getName()).toLowerCase();
+            if (this.updateHeaderSet.contains(nameLower)) {
+                this.requestBytes = helpers.removeParameter(this.requestBytes, param);
+                if (nameLower.equals("x-amz-content-sha256") && isS3Request()) {
+                    // only update this one if it was in the original request. all other params are required.
+                    this.requestBytes = helpers.removeParameter(this.requestBytes, param);
+                    this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Content-SHA256", getPayloadHash(), IParameter.PARAM_URL));
+                }
             }
         }
 
-        // handle cases where parameter was not in original request
-        if (!updatedCredential) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Credential", getCredentialScope(true), IParameter.PARAM_URL));
-        }
-        if (!updatedDate) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Date", this.amzDateYMD, IParameter.PARAM_URL));
-        }
-        if (!updatedSignature) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Signature", getSignature(secretKey), IParameter.PARAM_URL));
-        }
-        if (!updatedSignedHeaders) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", getCanonicalSignedHeaders(), IParameter.PARAM_URL));
-        }
-        if (!updatedSha256 && isS3Request()) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Content-SHA256", getPayloadHash(), IParameter.PARAM_URL));
-        }
+        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Credential", getCredentialScope(true), IParameter.PARAM_URL));
+        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Date", this.amzDate, IParameter.PARAM_URL));
+        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Algorithm", this.algorithm, IParameter.PARAM_URL));
+        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Expires", Integer.toString(expires), IParameter.PARAM_URL));
+
+        // save signed headers and signature for last, after all other params have been updated.
+        this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
+        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", getCanonicalSignedHeaders().replace(";", "%3B"), IParameter.PARAM_URL));
+        this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
+        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Signature", getSignature(secretKey), IParameter.PARAM_URL));
 
         // update request object since we modified the parameters
-        this.request = helpers.analyzeRequest(this.requestBytes);
+        this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
         return true;
     }
 
+    private boolean updateQueryString(final String secretKey)
+    {
+        return updateQueryString(secretKey, this.queryExpirationSeconds);
+    }
+
+    public String getSignedUrl(final String secretKey, final int expires)
+    {
+        updateAmzDate();
+        // sign just the host header since we can't control which headers are sent when this
+        // url is pasted into the browser.
+        HashSet<String> headerSet = new HashSet<>(this.signedHeaderSet);
+        this.signedHeaderSet = new HashSet<>(Arrays.asList("host"));
+        String url = "";
+        if (updateQueryString(secretKey, expires)) {
+            url = this.request.getUrl().toString();
+        }
+        this.signedHeaderSet = headerSet;
+        return url;
+    }
 
     public byte[] getSignedRequestBytes(final String secretKey)
     {
         // update timestamp before signing. will be good for 15 minutes
         updateAmzDate();
 
-        // attempt to keep signature in original location (url or headers)
+        // attempt to keep signature in original location (url or headers). if there is a mix of signature
+        // params in headers and the query string, this will likely break
         if (this.signatureInHeaders) {
             // update headers and preserve order. replace authorization header with new signature.
             ArrayList<String> headers = new ArrayList<>(this.request.getHeaders());
@@ -587,21 +603,22 @@ public class AWSSignedRequest
             boolean dateUpdated = false;
             boolean sha256Updated = false;
             for (int i = 0; i < headers.size(); i++) {
-                if (headers.get(i).toLowerCase().startsWith("authorization:")) {
+                final String nameLower = headers.get(i).toLowerCase();
+                if (nameLower.startsWith("authorization:")) {
                     headers.set(i, newAuthHeader);
                     authUpdated = true;
                 }
-                else if (headers.get(i).toLowerCase().startsWith("x-amz-date:")) {
+                else if (nameLower.startsWith("x-amz-date:")) {
                     headers.set(i, newAmzDateHeader);
                     dateUpdated = true;
                 }
-                else if (headers.get(i).toLowerCase().startsWith("x-amz-content-sha256:")) {
+                else if (nameLower.startsWith("x-amz-content-sha256:")) {
                     if (isS3Request()) {
                         headers.set(i, newSha256Header);
                         sha256Updated = true;
                     }
                 }
-                else if (headers.get(i).toLowerCase().startsWith("content-md5:")) {
+                else if (nameLower.startsWith("content-md5:")) {
                     // update this header if it already exists, otherwise, don't bother adding it.
                     headers.set(i, String.format("Content-MD5: %s", getContentMD5()));
                 }
@@ -622,7 +639,8 @@ public class AWSSignedRequest
 
         // for non-POST requests, update signature in query string. this will almost always be a GET request.
         if (updateQueryString(secretKey)) {
-            return this.helpers.buildHttpMessage(this.request.getHeaders(), null);
+            byte[] payload = getPayloadBytes();
+            return this.helpers.buildHttpMessage(this.request.getHeaders(), payload.length == 0 ? null : payload);
         }
         return null;
     }

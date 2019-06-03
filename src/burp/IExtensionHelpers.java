@@ -24,7 +24,7 @@ public interface IExtensionHelpers
 
     /**
      * This method can be used to analyze an HTTP request, and obtain various
-     * secretKey details about it.
+     * key details about it.
      *
      * @param request An <code>IHttpRequestResponse</code> object containing the
      * request to be analyzed.
@@ -35,7 +35,7 @@ public interface IExtensionHelpers
 
     /**
      * This method can be used to analyze an HTTP request, and obtain various
-     * secretKey details about it.
+     * key details about it.
      *
      * @param httpService The HTTP service associated with the request. This is
      * optional and may be <code>null</code>, in which case the resulting
@@ -48,7 +48,7 @@ public interface IExtensionHelpers
 
     /**
      * This method can be used to analyze an HTTP request, and obtain various
-     * secretKey details about it. The resulting <code>IRequestInfo</code> object will
+     * key details about it. The resulting <code>IRequestInfo</code> object will
      * not include the full request URL. To obtain the full URL, use one of the
      * other overloaded <code>analyzeRequest()</code> methods.
      *
@@ -60,7 +60,7 @@ public interface IExtensionHelpers
 
     /**
      * This method can be used to analyze an HTTP response, and obtain various
-     * secretKey details about it.
+     * key details about it.
      *
      * @param response The response to be analyzed.
      * @return An <code>IResponseInfo</code> object that can be queried to

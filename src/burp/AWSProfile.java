@@ -30,6 +30,8 @@ public class AWSProfile implements Serializable
 
     public AWSProfile(String name, String accessKeyId, String secretKey, String region, String service)
     {
+        // NOTE: validation is intentionally omitted here. this allows users to specify
+        // invalid values for testing purposes.
         this.name = name;
         this.accessKeyId = accessKeyId;
         this.secretKey = secretKey;
