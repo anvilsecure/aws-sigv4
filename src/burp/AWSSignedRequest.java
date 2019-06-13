@@ -40,9 +40,9 @@ public class AWSSignedRequest
     private boolean signatureInHeaders = false;
 
     // regex for the "Credential" parameter in the "Authorization" header or the "X-Amz-Credential" query string param
-    private static Pattern credentialRegex = Pattern.compile("^Credential=[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9=]{1,64}/aws4_request,?$",
+    private static Pattern credentialRegex = Pattern.compile("^Credential=[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9-]{1,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
-    private static Pattern credentialValueRegex = Pattern.compile("^[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9=]{1,64}/aws4_request,?$",
+    private static Pattern credentialValueRegex = Pattern.compile("^[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9-]{1,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
 
     @Override
