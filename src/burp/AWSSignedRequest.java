@@ -66,8 +66,8 @@ public class AWSSignedRequest
 
         // attempt to parse header and query string for all requests. we only expect to see the query string
         // parameters with GET requests but this will be robust
-        parseAuthorizationQueryString();
-        signatureInHeaders = parseAuthorizationHeader();
+        signatureInHeaders = !parseAuthorizationQueryString();
+        parseAuthorizationHeader();
     }
 
     public AWSSignedRequest(IHttpService httpService, byte[] requestBytes, IExtensionHelpers helpers, LogWriter logger)
@@ -130,6 +130,16 @@ public class AWSSignedRequest
         this.setAccessKeyId(profile.accessKeyId);
     }
 
+    public static AWSSignedRequest fromUnsignedRequest(final IHttpRequestResponse messageInfo, final AWSProfile profile, IExtensionHelpers helpers, LogWriter logger)
+    {
+        AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, helpers, logger);
+        signedRequest.applyProfile(profile);
+        signedRequest.init(signedRequest.requestBytes);
+        // reinitialize with a valid signed request
+        signedRequest.init(signedRequest.getSignedRequestBytes(profile.secretKey));
+        return signedRequest;
+    }
+
     /*
     return array of {name, value} with leading and trailing whitespace removed
      */
@@ -147,6 +157,7 @@ public class AWSSignedRequest
     */
     private boolean parseAuthorizationQueryString()
     {
+        boolean sigInQueryString = false;
         for (final IParameter param : this.request.getParameters()) {
             final String name = helpers.urlDecode(param.getName());
             final String value = helpers.urlDecode(param.getValue());
@@ -162,6 +173,7 @@ public class AWSSignedRequest
                 this.amzDateYMD = creds[1];
                 this.region = creds[2];
                 this.service = creds[3];
+                sigInQueryString = true;
             }
             else if (name.toLowerCase().equals("x-amz-signedheaders")) {
                 for (String header : value.split("[\\s;]+")) {
@@ -179,7 +191,7 @@ public class AWSSignedRequest
                 }
             }
         }
-        return true;
+        return sigInQueryString;
     }
 
     /*
