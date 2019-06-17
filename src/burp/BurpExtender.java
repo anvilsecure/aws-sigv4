@@ -573,7 +573,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             case IContextMenuInvocation.CONTEXT_PROXY_HISTORY:
                 IHttpRequestResponse[] messages = invocation.getSelectedMessages();
                 IRequestInfo requestInfo = helpers.analyzeRequest(messages[0]);
-                if ((messages.length > 0) && requestInfo.getMethod().toUpperCase().equals("GET") && isAwsRequest(requestInfo)) {
+                boolean isSigV4 = isAwsRequest(requestInfo);
+                if ((messages.length > 0) && requestInfo.getMethod().toUpperCase().equals("GET") && isSigV4) {
                     JMenuItem signedUrlItem = new JMenuItem("Copy Signed URL");
                     signedUrlItem.addActionListener(new ActionListener()
                     {
@@ -596,7 +597,28 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     });
                     list.add(signedUrlItem);
                 }
+                else if ((messages.length > 0) && (invocation.getInvocationContext() == IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST) && !isSigV4) {
+                    JMenu addSignatureMenu = new JMenu("Add Signature");
+                    for (final String name : profileList) {
+                        if (name.length() == 0) continue;
+                        JMenuItem sigItem = new JMenuItem(name);
+                        sigItem.addActionListener(new ActionListener()
+                        {
+                            @Override
+                            public void actionPerformed(ActionEvent actionEvent)
+                            {
+                                JMenuItem sigItem = (JMenuItem)actionEvent.getSource();
+                                AWSSignedRequest signedRequest = AWSSignedRequest.fromUnsignedRequest(messages[0], profileNameMap.get(sigItem.getText()), helpers, logger);
+                                final AWSProfile profile = customizeSignedRequest(signedRequest);
+                                messages[0].setRequest(signedRequest.getSignedRequestBytes(profile.secretKey));
+                            }
+                        });
+                        addSignatureMenu.add(sigItem);
+                    }
+                    list.add(addSignatureMenu);
+                }
         }
+
         return list;
     }
 
