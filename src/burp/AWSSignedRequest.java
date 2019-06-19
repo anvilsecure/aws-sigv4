@@ -135,8 +135,6 @@ public class AWSSignedRequest
         AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, helpers, logger);
         signedRequest.applyProfile(profile);
         signedRequest.init(signedRequest.requestBytes);
-        // reinitialize with a valid signed request
-        signedRequest.init(signedRequest.getSignedRequestBytes(profile.secretKey));
         return signedRequest;
     }
 
@@ -608,19 +606,14 @@ public class AWSSignedRequest
         if (this.signatureInHeaders) {
             // update headers and preserve order. replace authorization header with new signature.
             ArrayList<String> headers = new ArrayList<>(this.request.getHeaders());
-            final String newAuthHeader = getAuthorizationHeader(secretKey);
+            final int originalHeaderCount = headers.size();
             final String newAmzDateHeader = "X-Amz-Date: " + this.amzDate;
             final String newSha256Header = "X-Amz-Content-SHA256: " + getPayloadHash();
-            boolean authUpdated = false;
             boolean dateUpdated = false;
             boolean sha256Updated = false;
             for (int i = 0; i < headers.size(); i++) {
                 final String nameLower = headers.get(i).toLowerCase();
-                if (nameLower.startsWith("authorization:")) {
-                    headers.set(i, newAuthHeader);
-                    authUpdated = true;
-                }
-                else if (nameLower.startsWith("x-amz-date:")) {
+                if (nameLower.startsWith("x-amz-date:")) {
                     headers.set(i, newAmzDateHeader);
                     dateUpdated = true;
                 }
@@ -637,14 +630,33 @@ public class AWSSignedRequest
             }
 
             // if the headers didn't exist in the original request, add them here
-            if (!authUpdated) {
-                headers.add(newAuthHeader);
-            }
             if (!dateUpdated) {
                 headers.add(newAmzDateHeader);
             }
             if (!sha256Updated && isS3Request()) {
                 headers.add(newSha256Header);
+            }
+
+            // save Authorization header for last since it is dependent on other headers which may have changed.
+            if (originalHeaderCount != headers.size()) {
+                // if request was modified (header added), rebuild the message in case we ended up adding
+                // a new header to sign. XXX consider storing headers and body separately until message is signed
+                // so rebuilding isn't necessary?
+                this.requestBytes = this.helpers.buildHttpMessage(headers, getPayloadBytes());
+                this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
+                headers = new ArrayList<>(this.request.getHeaders());
+            }
+            boolean authUpdated = false;
+            final String newAuthHeader = getAuthorizationHeader(secretKey);
+            for (int i = 0; i < headers.size(); i++) {
+                if (headers.get(i).toLowerCase().startsWith("authorization:")) {
+                    headers.set(i, newAuthHeader);
+                    authUpdated = true;
+                    break;
+                }
+            }
+            if (!authUpdated) {
+                headers.add(newAuthHeader);
             }
             return this.helpers.buildHttpMessage(headers, getPayloadBytes());
         }
