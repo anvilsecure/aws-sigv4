@@ -68,7 +68,7 @@ public class AWSProfileEditorDialog extends JDialog
 
         JLabel statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
         statusLabel.setForeground(burp.textOrange);
-        okButton = new JButton("Ok");
+        this.okButton = new JButton("Ok");
         JButton cancelButton = new JButton("Cancel");
 
         JPanel buttonPanel = new JPanel();

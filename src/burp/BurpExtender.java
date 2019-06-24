@@ -428,6 +428,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private void saveExtensionSettings()
     {
+        // XXX avoid serialization so this doesn't break whenever the class changes
         ArrayList<AWSProfile> awsProfiles = new ArrayList<>();
         if (this.persistProfilesCheckBox.isSelected()) {
             for (final String name : this.profileNameMap.keySet()) {
@@ -597,7 +598,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     });
                     list.add(signedUrlItem);
                 }
-                else if ((messages.length > 0) && (invocation.getInvocationContext() == IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST) && !isSigV4) {
+                if ((messages.length > 0) && (invocation.getInvocationContext() == IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST) && !isSigV4) {
                     JMenu addSignatureMenu = new JMenu("Add Signature");
                     for (final String name : profileList) {
                         if (name.length() == 0) continue;
@@ -610,6 +611,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 JMenuItem sigItem = (JMenuItem)actionEvent.getSource();
                                 AWSSignedRequest signedRequest = AWSSignedRequest.fromUnsignedRequest(messages[0], profileNameMap.get(sigItem.getText()), helpers, logger);
                                 final AWSProfile profile = customizeSignedRequest(signedRequest);
+                                if (profile == null) {
+                                    // XXX maybe use an "Add Profile" dialog here?
+                                    logger.error("Invalid profile specified. KeyId does not exist: "+signedRequest.getAccessKeyId());
+                                    return;
+                                }
                                 // if region or service is missing, prompt user. do not re-prompt if values are left blank
                                 if (signedRequest.getService().equals("") || signedRequest.getRegion().equals("")) {
                                     AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Edit Signature", true, profile, BurpExtender.this);
@@ -625,6 +631,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                         dialog.serviceTextField.requestFocus();
                                     }
                                     dialog.setVisible(true);
+                                    if (dialog.getProfile() == null) {
+                                        // user hit "Cancel", abort.
+                                        return;
+                                    }
                                     signedRequest.applyProfile(dialog.getProfile());
                                 }
                                 messages[0].setRequest(signedRequest.getSignedRequestBytes(profile.secretKey));
@@ -634,8 +644,37 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     }
                     list.add(addSignatureMenu);
                 }
+                else if ((messages.length > 0) && (invocation.getInvocationContext() == IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST) && isSigV4) {
+                    JMenuItem editSignatureItem = new JMenuItem("Edit Signature");
+                    editSignatureItem.addActionListener(new ActionListener()
+                    {
+                        @Override
+                        public void actionPerformed(ActionEvent actionEvent)
+                        {
+                            AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], helpers, logger);
+                            final AWSProfile sigProfile = signedRequest.getAnonymousProfile(); // get profile in original request
+                            AWSProfile editedProfile = new AWSProfile(customizeSignedRequest(signedRequest)); // get profile as saved by the accessKey
+                            // some values may differ from what are saved for the profile, so set them here.
+                            editedProfile.region = sigProfile.region;
+                            editedProfile.service = sigProfile.service;
+                            AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Edit Signature", true, editedProfile, BurpExtender.this);
+                            callbacks.customizeUiComponent(dialog);
+                            // disable profile name and secret since they will have to be changed in the top-level plugin tab.
+                            // XXX would be nice to have a combobox for the profile here instead of disabling.
+                            dialog.disableName();
+                            dialog.disableKeyId();
+                            dialog.disableSecret();
+                            dialog.setVisible(true);
+                            if (dialog.getProfile() != null) {
+                                // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.
+                                signedRequest.applyProfile(dialog.getProfile());
+                                messages[0].setRequest(signedRequest.getSignedRequestBytes(editedProfile.secretKey));
+                            }
+                        }
+                    });
+                    list.add(editSignatureItem);
+                }
         }
-
         return list;
     }
 
@@ -751,22 +790,37 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     public static boolean isAwsRequest(IRequestInfo request)
     {
         // all AWS requests require x-amz-date either in the query string or as a header. Date can be used but is not unique enough.
-        // Consider adding additional check for Authorization header or X-Amz-Credential query string param.
+        // Consider adding additional check for Authorization header or X-Amz-Credential query string param - DONE
+        // This routine needs to be fast since potentially ALL requests will cause an invocation.
         // https://docs.aws.amazon.com/general/latest/gr/sigv4-date-handling.html
+        boolean hasAmzDate = false;
+        boolean hasAmzCreds = false;
         for (String header : request.getHeaders()) {
-            if (header.toLowerCase().startsWith("x-amz-date:")) {
-                return true;
+            if (!hasAmzDate && header.toLowerCase().startsWith("x-amz-date:")) {
+                hasAmzDate = true;
+                if (hasAmzCreds) break;
+            }
+            else if (!hasAmzCreds && header.toLowerCase().startsWith("authorization:")) {
+                hasAmzCreds = true;
+                if (hasAmzDate) break;
             }
         }
+
+        // we don't reset hasAmzDate/hasAmzCreds here even though parameters probably shouldn't be mixed.
 
         // check for query string parameters
         for (IParameter param : request.getParameters()) {
-            if (param.getName().toLowerCase().equals("x-amz-date")) {
-                return true;
+            if (!hasAmzDate && param.getName().toLowerCase().equals("x-amz-date")) {
+                hasAmzDate = true;
+                if (hasAmzCreds) break;
+            }
+            else if (!hasAmzCreds && param.getName().toLowerCase().equals("x-amz-credential")) {
+                hasAmzCreds = true;
+                if (hasAmzDate) break;
             }
         }
 
-        return false;
+        return (hasAmzDate && hasAmzCreds);
     }
 
     private String getDefaultProfileName()
