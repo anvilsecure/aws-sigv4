@@ -86,25 +86,17 @@ public class AWSSignedRequest
         init(messageInfo.getRequest());
     }
 
-    public void setRegion(String region)
-    {
-        this.region = region;
-    }
+    public void setRegion(String region) { this.region = region; }
 
-    public void setService(String service)
-    {
-        this.service = service;
-    }
+    public String getRegion() { return this.region; }
 
-    public void setAccessKeyId(String accessKeyId)
-    {
-        this.accessKeyId = accessKeyId;
-    }
+    public void setService(String service) { this.service = service; }
 
-    public String getAccessKeyId()
-    {
-        return this.accessKeyId;
-    }
+    public String getService() { return this.service; }
+
+    public void setAccessKeyId(String accessKeyId) { this.accessKeyId = accessKeyId; }
+
+    public String getAccessKeyId() { return this.accessKeyId; }
 
     /*
     check service to determine if this is an s3 request. s3 requests must be handled differently.

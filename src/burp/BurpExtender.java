@@ -610,6 +610,23 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 JMenuItem sigItem = (JMenuItem)actionEvent.getSource();
                                 AWSSignedRequest signedRequest = AWSSignedRequest.fromUnsignedRequest(messages[0], profileNameMap.get(sigItem.getText()), helpers, logger);
                                 final AWSProfile profile = customizeSignedRequest(signedRequest);
+                                // if region or service is missing, prompt user. do not re-prompt if values are left blank
+                                if (signedRequest.getService().equals("") || signedRequest.getRegion().equals("")) {
+                                    AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Edit Signature", true, profile, BurpExtender.this);
+                                    callbacks.customizeUiComponent(dialog);
+                                    dialog.disableName();
+                                    dialog.disableKeyId();
+                                    dialog.disableSecret();
+                                    // set focus to first missing field
+                                    if (signedRequest.getRegion().equals("")) {
+                                        dialog.regionTextField.requestFocus();
+                                    }
+                                    else {
+                                        dialog.serviceTextField.requestFocus();
+                                    }
+                                    dialog.setVisible(true);
+                                    signedRequest.applyProfile(dialog.getProfile());
+                                }
                                 messages[0].setRequest(signedRequest.getSignedRequestBytes(profile.secretKey));
                             }
                         });
