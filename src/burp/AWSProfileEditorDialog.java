@@ -9,6 +9,13 @@ import java.awt.event.ActionListener;
 public class AWSProfileEditorDialog extends JDialog
 {
 
+    protected JTextField nameTextField;
+    protected JTextField keyIdTextField;
+    protected JTextField secretKeyTextField;
+    protected JTextField regionTextField;
+    protected JTextField serviceTextField;
+    protected JButton okButton;
+
     private static GridBagConstraints newConstraint(int gridx, int gridy, int gridwidth, int gridheight)
     {
         GridBagConstraints c = new GridBagConstraints();
@@ -44,24 +51,24 @@ public class AWSProfileEditorDialog extends JDialog
         outerPanel.setBorder(new TitledBorder(""));
 
         outerPanel.add(new JLabel("Name"), newConstraint(0, 0, GridBagConstraints.FIRST_LINE_START));
-        JTextField nameTextField = new JTextField("", 40);
+        this.nameTextField = new JTextField("", 40);
         outerPanel.add(nameTextField, newConstraint(1, 0));
         outerPanel.add(new JLabel("KeyId"), newConstraint(0, 1, GridBagConstraints.FIRST_LINE_START));
-        JTextField keyIdTextField = new JTextField("", 40);
+        this.keyIdTextField = new JTextField("", 40);
         outerPanel.add(keyIdTextField, newConstraint(1, 1));
         outerPanel.add(new JLabel("SecretKey"), newConstraint(0, 2, GridBagConstraints.FIRST_LINE_START));
-        JTextField secretKeyTextField = new JTextField("", 40);
+        this.secretKeyTextField = new JTextField("", 40);
         outerPanel.add(secretKeyTextField, newConstraint(1, 2));
         outerPanel.add(new JLabel("Region"), newConstraint(0, 3, GridBagConstraints.FIRST_LINE_START));
-        JTextField regionTextField = new JTextField("", 40);
+        this.regionTextField = new JTextField("", 40);
         outerPanel.add(regionTextField, newConstraint(1, 3));
         outerPanel.add(new JLabel("Service"), newConstraint(0, 4, GridBagConstraints.FIRST_LINE_START));
-        JTextField serviceTextField = new JTextField("", 40);
+        this.serviceTextField = new JTextField("", 40);
         outerPanel.add(serviceTextField, newConstraint(1, 4));
 
         JLabel statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
         statusLabel.setForeground(burp.textOrange);
-        JButton okButton = new JButton("Ok");
+        okButton = new JButton("Ok");
         JButton cancelButton = new JButton("Cancel");
 
         JPanel buttonPanel = new JPanel();
