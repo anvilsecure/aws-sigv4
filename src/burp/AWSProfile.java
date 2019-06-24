@@ -28,6 +28,11 @@ public class AWSProfile implements Serializable
     public static final Pattern accessKeyIdPattern = Pattern.compile("^[\\w]{16,128}$");
     public static final Pattern secretKeyPattern = Pattern.compile("^[a-zA-Z0-9/+]{40,128}$"); // base64 characters. not sure on length
 
+    public AWSProfile(final AWSProfile profile)
+    {
+        this(profile.name, profile.accessKeyId, profile.secretKey, profile.region, profile.service);
+    }
+
     public AWSProfile(String name, String accessKeyId, String secretKey, String region, String service)
     {
         // NOTE: validation is intentionally omitted here. this allows users to specify

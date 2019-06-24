@@ -40,9 +40,9 @@ public class AWSSignedRequest
     private boolean signatureInHeaders = false;
 
     // regex for the "Credential" parameter in the "Authorization" header or the "X-Amz-Credential" query string param
-    private static Pattern credentialRegex = Pattern.compile("^Credential=[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9-]{1,64}/aws4_request,?$",
+    private static Pattern credentialRegex = Pattern.compile("^Credential=[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{0,64}/[a-z0-9-]{0,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
-    private static Pattern credentialValueRegex = Pattern.compile("^[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{1,64}/[a-z0-9-]{1,64}/aws4_request,?$",
+    private static Pattern credentialValueRegex = Pattern.compile("^[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{0,64}/[a-z0-9-]{0,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
 
     @Override
@@ -122,6 +122,11 @@ public class AWSSignedRequest
         this.setAccessKeyId(profile.accessKeyId);
     }
 
+    public AWSProfile getAnonymousProfile()
+    {
+        return new AWSProfile("", this.accessKeyId, "", this.region, this.service);
+    }
+
     public static AWSSignedRequest fromUnsignedRequest(final IHttpRequestResponse messageInfo, final AWSProfile profile, IExtensionHelpers helpers, LogWriter logger)
     {
         AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, helpers, logger);
@@ -158,7 +163,7 @@ public class AWSSignedRequest
                     logger.error("Invalid Credential parameter in Authorization query passed to AWSSignedRequest");
                     return false;
                 }
-                final String[] creds = value.split("/+");
+                final String[] creds = value.split("/");
                 this.accessKeyId = creds[0];
                 this.amzDateYMD = creds[1];
                 this.region = creds[2];
@@ -214,7 +219,7 @@ public class AWSSignedRequest
                     logger.error("Credential parameter in authorization header is invalid.");
                     return false;
                 }
-                final String[] creds = tokens[2].split("/+");
+                final String[] creds = tokens[2].split("/");
                 this.accessKeyId = creds[0].substring(11); // skip "Credential="
                 this.amzDateYMD = creds[1];
                 this.region = creds[2];
