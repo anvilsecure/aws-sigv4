@@ -652,8 +652,22 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         public void actionPerformed(ActionEvent actionEvent)
                         {
                             AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], helpers, logger);
-                            final AWSProfile sigProfile = signedRequest.getAnonymousProfile(); // get profile in original request
-                            AWSProfile editedProfile = new AWSProfile(customizeSignedRequest(signedRequest)); // get profile as saved by the accessKey
+                            final AWSProfile sigProfile = signedRequest.getAnonymousProfile(); // build profile from original request
+                            final AWSProfile savedProfile = customizeSignedRequest(signedRequest); // get profile used to sign original request (if it exists)
+                            if (savedProfile == null) {
+                                // if existing profile doesn't exist with this key id, create one and apply it
+                                AWSProfileEditorDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null, BurpExtender.this);
+                                dialog.applyProfile(sigProfile); // auto fill fields gathered from original request
+                                callbacks.customizeUiComponent(dialog);
+                                dialog.setVisible(true);
+                                final AWSProfile newProfile = customizeSignedRequest(signedRequest);
+                                if (newProfile != null) {
+                                    signedRequest.applyProfile(newProfile);
+                                    messages[0].setRequest(signedRequest.getSignedRequestBytes(newProfile.secretKey));
+                                } // else... XXX maybe display an error dialog here
+                                return;
+                            }
+                            AWSProfile editedProfile = new AWSProfile(savedProfile); // get profile as saved by the accessKey
                             // some values may differ from what are saved for the profile, so set them here.
                             editedProfile.region = sigProfile.region;
                             editedProfile.service = sigProfile.service;

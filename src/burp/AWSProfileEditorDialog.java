@@ -101,17 +101,22 @@ public class AWSProfileEditorDialog extends JDialog
             }
         });
 
+        // populate fields with existing profile for an "edit" dialog.
+        applyProfile(profile);
+
+        add(outerPanel);
+        pack();
+        setLocationRelativeTo(burp.getUiComponent());
+    }
+
+    protected void applyProfile(final AWSProfile profile)
+    {
         if (profile != null) {
-            // populate fields with existing profile for an "edit" dialog.
             nameTextField.setText(profile.name);
             keyIdTextField.setText(profile.accessKeyId);
             secretKeyTextField.setText(profile.secretKey);
             regionTextField.setText(profile.region);
             serviceTextField.setText(profile.service);
         }
-
-        add(outerPanel);
-        pack();
-        setLocationRelativeTo(burp.getUiComponent());
     }
 }
