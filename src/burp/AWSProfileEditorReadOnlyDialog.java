@@ -28,7 +28,7 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
             public void actionPerformed(ActionEvent actionEvent)
             {
                 editedProfile = new AWSProfile(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText(),
-                        regionTextField.getText(), serviceTextField.getText());
+                        regionTextField.getText(), serviceTextField.getText(), assumeRoleTextField.getText(), burp);
                 setVisible(false);
                 dispose();
             }
