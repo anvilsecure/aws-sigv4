@@ -14,6 +14,7 @@ public class AWSProfileEditorDialog extends JDialog
     protected JTextField secretKeyTextField;
     protected JTextField regionTextField;
     protected JTextField serviceTextField;
+    protected JTextField assumeRoleTextField;
     protected JButton okButton;
 
     private static GridBagConstraints newConstraint(int gridx, int gridy, int gridwidth, int gridheight)
@@ -65,6 +66,9 @@ public class AWSProfileEditorDialog extends JDialog
         outerPanel.add(new JLabel("Service"), newConstraint(0, 4, GridBagConstraints.FIRST_LINE_START));
         this.serviceTextField = new JTextField("", 40);
         outerPanel.add(serviceTextField, newConstraint(1, 4));
+        outerPanel.add(new JLabel("RoleArn"), newConstraint(0, 5, GridBagConstraints.FIRST_LINE_START));
+        this.assumeRoleTextField = new JTextField("", 40);
+        outerPanel.add(assumeRoleTextField, newConstraint(1, 5));
 
         JLabel statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
         statusLabel.setForeground(burp.textOrange);
@@ -91,7 +95,7 @@ public class AWSProfileEditorDialog extends JDialog
             public void actionPerformed(ActionEvent actionEvent)
             {
                 if (burp.updateProfile(profile, new AWSProfile(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText(),
-                        regionTextField.getText(), serviceTextField.getText()))) {
+                        regionTextField.getText(), serviceTextField.getText(), assumeRoleTextField.getText(), burp))) {
                     setVisible(false);
                     dispose();
                 }
@@ -117,6 +121,9 @@ public class AWSProfileEditorDialog extends JDialog
             secretKeyTextField.setText(profile.secretKey);
             regionTextField.setText(profile.region);
             serviceTextField.setText(profile.service);
+            if (profile.getAssumeRole() != null) {
+                assumeRoleTextField.setText(profile.getAssumeRole().getRoleArn());
+            }
         }
     }
 }

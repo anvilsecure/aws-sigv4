@@ -1,5 +1,6 @@
 package burp;
 
+import javax.json.*;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
@@ -7,10 +8,7 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -30,7 +28,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private static final String NO_DEFAULT_PROFILE = "";
 
-    private IExtensionHelpers helpers;
+    protected IExtensionHelpers helpers;
     private IBurpExtenderCallbacks callbacks;
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, AWSProfile> profileNameMap; // map name to profile
@@ -428,24 +426,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private void saveExtensionSettings()
     {
-        // XXX avoid serialization so this doesn't break whenever the class changes
-        ArrayList<AWSProfile> awsProfiles = new ArrayList<>();
+        JsonArrayBuilder jsonArrayBuilder = Json.createArrayBuilder();
         if (this.persistProfilesCheckBox.isSelected()) {
             for (final String name : this.profileNameMap.keySet()) {
-                awsProfiles.add(this.profileNameMap.get(name));
+                jsonArrayBuilder.add(this.profileNameMap.get(name).toJsonObject());
             }
         }
-        try {
-            ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-            ObjectOutputStream objectOut = new ObjectOutputStream(bytesOut);
-            objectOut.writeObject(awsProfiles);
-            objectOut.close();
-            final String serializedProfileList = this.helpers.base64Encode(bytesOut.toByteArray());
-            this.callbacks.saveExtensionSetting(SETTING_PROFILES, serializedProfileList);
-            logger.info(String.format("Saved %d profile(s)", awsProfiles.size()));
-        } catch (Exception exc) {
-            logger.error("Failed to save AWS profiles");
-        }
+        JsonArray jsonArray = jsonArrayBuilder.build();
+        this.callbacks.saveExtensionSetting(SETTING_PROFILES, jsonArray.toString());
+        logger.info(String.format("Saved %d profile(s)", jsonArray.size()));
 
         this.callbacks.saveExtensionSetting(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected() ? "true" : "false");
         this.callbacks.saveExtensionSetting(SETTING_EXTENSION_ENABLED, this.signingEnabledCheckBox.isSelected() ? "true" : "false");
@@ -458,23 +447,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private void loadExtensionSettings()
     {
-        try {
-            final String serializedProfileListBase64 = callbacks.loadExtensionSetting(SETTING_PROFILES);
-            if (serializedProfileListBase64 != null) {
-                final byte[] serializedProfileList = helpers.base64Decode(serializedProfileListBase64);
-                ObjectInputStream objectIn = new ObjectInputStream(new ByteArrayInputStream(serializedProfileList));
-                ArrayList<AWSProfile> profileList = (ArrayList<AWSProfile>) objectIn.readObject();
-                objectIn.close();
-                for (final AWSProfile profile : profileList) {
-                    addProfile(profile);
-                }
-                logger.info(String.format("Loaded %s profile(s)", profileList.size()));
+        final String profilesJsonString = this.callbacks.loadExtensionSetting(SETTING_PROFILES);
+        if (profilesJsonString != null) {
+            final JsonArray profilesJson = Json.createReader(new StringReader(profilesJsonString)).readArray();
+            for (final JsonValue obj : profilesJson) {
+                addProfile(AWSProfile.fromJsonObject((JsonObject) obj, this));
             }
-            else {
-                logger.debug("No saved profiles to load");
-            }
-        } catch (Exception exc) {
-            logger.error("Failed to load saved profiles");
+            logger.info(String.format("Loaded %s profile(s)", profilesJson.size()));
         }
 
         setDefaultProfileName(this.callbacks.loadExtensionSetting(SETTING_DEFAULT_PROFILE_NAME));
@@ -590,7 +569,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             }
                             else {
                                 // sign a url valid for 120 seconds. XXX consider making this configurable.
-                                signedUrl = signedRequest.getSignedUrl(profile.secretKey, 120);
+                                signedUrl = signedRequest.getSignedUrl(profile.getCredentials(), 120);
                             }
                             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                             clipboard.setContents(new StringSelection(signedUrl), null);
@@ -637,7 +616,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                     }
                                     signedRequest.applyProfile(dialog.getProfile());
                                 }
-                                messages[0].setRequest(signedRequest.getSignedRequestBytes(profile.secretKey));
+                                messages[0].setRequest(signedRequest.getSignedRequestBytes(profile.getCredentials()));
                             }
                         });
                         addSignatureMenu.add(sigItem);
@@ -663,7 +642,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 final AWSProfile newProfile = customizeSignedRequest(signedRequest);
                                 if (newProfile != null) {
                                     signedRequest.applyProfile(newProfile);
-                                    messages[0].setRequest(signedRequest.getSignedRequestBytes(newProfile.secretKey));
+                                    messages[0].setRequest(signedRequest.getSignedRequestBytes(newProfile.getCredentials()));
                                 } // else... XXX maybe display an error dialog here
                                 return;
                             }
@@ -682,7 +661,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             if (dialog.getProfile() != null) {
                                 // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.
                                 signedRequest.applyProfile(dialog.getProfile());
-                                messages[0].setRequest(signedRequest.getSignedRequestBytes(editedProfile.secretKey));
+                                messages[0].setRequest(signedRequest.getSignedRequestBytes(editedProfile.getCredentials()));
                             }
                         }
                     });
@@ -946,7 +925,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     return;
                 }
 
-                byte[] requestBytes = signedRequest.getSignedRequestBytes(profile.secretKey);
+                byte[] requestBytes = signedRequest.getSignedRequestBytes(profile.getCredentials());
                 if (requestBytes != null) {
                     logger.info("Signed request with profile: " + profile);
                     messageInfo.setRequest(requestBytes);

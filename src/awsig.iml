@@ -10,5 +10,7 @@
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Maven: javax.xml.bind:jaxb-api:2.3.0" level="project" />
+    <orderEntry type="library" name="Maven: javax.json:javax.json-api:1.1.4" level="project" />
+    <orderEntry type="library" name="Maven: org.glassfish:javax.json:1.1.4" level="project" />
   </component>
 </module>

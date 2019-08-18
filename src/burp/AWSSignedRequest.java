@@ -21,7 +21,7 @@ public class AWSSignedRequest
 {
     // set of headers to remove and update
     private HashSet<String> updateHeaderSet = new HashSet<>(Arrays.asList(
-            "x-amz-credential", "x-amz-date", "x-amz-algorithm", "x-amz-expires", "x-amz-signedheaders", "x-amz-signature", "x-amz-content-sha256"
+            "x-amz-credential", "x-amz-date", "x-amz-algorithm", "x-amz-expires", "x-amz-signedheaders", "x-amz-signature", "x-amz-content-sha256", "x-amz-security-token"
     ));
 
     private final String algorithm = "AWS4-HMAC-SHA256"; // we only compute the SHA256
@@ -63,6 +63,21 @@ public class AWSSignedRequest
         // requests require either one of these date headers.
         this.signedHeaderSet.add("x-amz-date");
         this.signedHeaderSet.add("date");
+
+        // make sure host header is present
+        boolean hasHostHeader = false;
+        for (String header : this.request.getHeaders()) {
+            if (header.toLowerCase().startsWith("host:")) {
+                hasHostHeader = true;
+                break;
+            }
+        }
+        if (!hasHostHeader) {
+            List<String> headers = this.request.getHeaders();
+            headers.add("Host: "+this.httpService.getHost());
+            this.requestBytes = this.helpers.buildHttpMessage(headers, getPayloadBytes());
+            this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
+        }
 
         // attempt to parse header and query string for all requests. we only expect to see the query string
         // parameters with GET requests but this will be robust
@@ -542,7 +557,7 @@ public class AWSSignedRequest
     update URL parameters for signed GET requests
     For query string params: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
     */
-    private boolean updateQueryString(final String secretKey, final int expires)
+    private boolean updateQueryString(final AWSCredentials credentials, final int expires)
     {
         // NOTE: updateParameter is case sensitive so we remove after a lowercase name compare then re-add with proper case.
         for (IParameter param : this.request.getParameters()) {
@@ -551,7 +566,6 @@ public class AWSSignedRequest
                 this.requestBytes = helpers.removeParameter(this.requestBytes, param);
                 if (nameLower.equals("x-amz-content-sha256") && isS3Request()) {
                     // only update this one if it was in the original request. all other params are required.
-                    this.requestBytes = helpers.removeParameter(this.requestBytes, param);
                     this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Content-SHA256", getPayloadHash(), IParameter.PARAM_URL));
                 }
             }
@@ -562,23 +576,28 @@ public class AWSSignedRequest
         this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Algorithm", this.algorithm, IParameter.PARAM_URL));
         this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Expires", Integer.toString(expires), IParameter.PARAM_URL));
 
+        // NOTE: whether or not this is part of the signature may be service dependent
+        if (credentials.getSessionToken() != null) {
+            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Security-Token", credentials.getSessionToken(), IParameter.PARAM_URL));
+        }
+
         // save signed headers and signature for last, after all other params have been updated.
         this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
         this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", getCanonicalSignedHeaders().replace(";", "%3B"), IParameter.PARAM_URL));
         this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
-        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Signature", getSignature(secretKey), IParameter.PARAM_URL));
+        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Signature", getSignature(credentials.getSecretKey()), IParameter.PARAM_URL));
 
         // update request object since we modified the parameters
         this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
         return true;
     }
 
-    private boolean updateQueryString(final String secretKey)
+    private boolean updateQueryString(final AWSCredentials credentials)
     {
-        return updateQueryString(secretKey, this.queryExpirationSeconds);
+        return updateQueryString(credentials, this.queryExpirationSeconds);
     }
 
-    public String getSignedUrl(final String secretKey, final int expires)
+    public String getSignedUrl(final AWSCredentials credentials, final int expires)
     {
         updateAmzDate();
         // sign just the host header since we can't control which headers are sent when this
@@ -586,28 +605,31 @@ public class AWSSignedRequest
         HashSet<String> headerSet = new HashSet<>(this.signedHeaderSet);
         this.signedHeaderSet = new HashSet<>(Arrays.asList("host"));
         String url = "";
-        if (updateQueryString(secretKey, expires)) {
+        if (updateQueryString(credentials, expires)) {
             url = this.request.getUrl().toString();
         }
         this.signedHeaderSet = headerSet;
         return url;
     }
 
-    public byte[] getSignedRequestBytes(final String secretKey)
+    public byte[] getSignedRequestBytes(final AWSCredentials credentials)
     {
         // update timestamp before signing. will be good for 15 minutes
         updateAmzDate();
+
+        // set this in case we are using temporary credentials and the id changed
+        setAccessKeyId(credentials.getAccessKeyId());
 
         // attempt to keep signature in original location (url or headers). if there is a mix of signature
         // params in headers and the query string, this will likely break
         if (this.signatureInHeaders) {
             // update headers and preserve order. replace authorization header with new signature.
-            ArrayList<String> headers = new ArrayList<>(this.request.getHeaders());
-            final int originalHeaderCount = headers.size();
+            List<String> headers = this.request.getHeaders();
             final String newAmzDateHeader = "X-Amz-Date: " + this.amzDate;
             final String newSha256Header = "X-Amz-Content-SHA256: " + getPayloadHash();
             boolean dateUpdated = false;
             boolean sha256Updated = false;
+            boolean sessionTokenUpdated = false;
             for (int i = 0; i < headers.size(); i++) {
                 final String nameLower = headers.get(i).toLowerCase();
                 if (nameLower.startsWith("x-amz-date:")) {
@@ -624,6 +646,12 @@ public class AWSSignedRequest
                     // update this header if it already exists, otherwise, don't bother adding it.
                     headers.set(i, String.format("Content-MD5: %s", getContentMD5()));
                 }
+                else if (nameLower.startsWith("x-amz-security-token:")) {
+                    if (credentials.getSessionToken() != null) {
+                        headers.set(i, String.format("X-Amz-Security-Token: %s", credentials.getSessionToken()));
+                        sessionTokenUpdated = true;
+                    }
+                }
             }
 
             // if the headers didn't exist in the original request, add them here
@@ -634,17 +662,21 @@ public class AWSSignedRequest
                 headers.add(newSha256Header);
             }
 
-            // save Authorization header for last since it is dependent on other headers which may have changed.
-            if (originalHeaderCount != headers.size()) {
-                // if request was modified (header added), rebuild the message in case we ended up adding
-                // a new header to sign. XXX consider storing headers and body separately until message is signed
-                // so rebuilding isn't necessary?
-                this.requestBytes = this.helpers.buildHttpMessage(headers, getPayloadBytes());
-                this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
-                headers = new ArrayList<>(this.request.getHeaders());
+            // NOTE: whether or not this is part of the signature may be service dependent
+            if (!sessionTokenUpdated && credentials.getSessionToken() != null) {
+                headers.add(String.format("X-Amz-Security-Token: %s", credentials.getSessionToken()));
             }
+
+            // save Authorization header for last since it is dependent on other headers which may have changed.
+            // if request was modified (header added), rebuild the message in case we ended up adding
+            // a new header to sign. XXX consider storing headers and body separately until message is signed
+            // so rebuilding isn't necessary?
+            this.requestBytes = this.helpers.buildHttpMessage(headers, getPayloadBytes());
+            this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
+            headers = this.request.getHeaders();
+
             boolean authUpdated = false;
-            final String newAuthHeader = getAuthorizationHeader(secretKey);
+            final String newAuthHeader = getAuthorizationHeader(credentials.getSecretKey());
             for (int i = 0; i < headers.size(); i++) {
                 if (headers.get(i).toLowerCase().startsWith("authorization:")) {
                     headers.set(i, newAuthHeader);
@@ -659,7 +691,7 @@ public class AWSSignedRequest
         }
 
         // for non-POST requests, update signature in query string. this will almost always be a GET request.
-        if (updateQueryString(secretKey)) {
+        if (updateQueryString(credentials)) {
             byte[] payload = getPayloadBytes();
             return this.helpers.buildHttpMessage(this.request.getHeaders(), payload.length == 0 ? null : payload);
         }

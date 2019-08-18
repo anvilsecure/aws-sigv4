@@ -1,7 +1,10 @@
 package burp;
 
+import javax.json.Json;
+import javax.json.JsonObject;
 import java.io.IOException;
 import java.io.Serializable;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -23,6 +26,9 @@ public class AWSProfile implements Serializable
     public String region;
     public String service;
 
+    private AWSAssumeRole assumeRole;
+    private BurpExtender burp;
+
     // see https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
     public static final Pattern profileNamePattern = Pattern.compile("^[\\w+=,.@-]{1,64}$");
     public static final Pattern accessKeyIdPattern = Pattern.compile("^[\\w]{16,128}$");
@@ -31,6 +37,9 @@ public class AWSProfile implements Serializable
     public AWSProfile(final AWSProfile profile)
     {
         this(profile.name, profile.accessKeyId, profile.secretKey, profile.region, profile.service);
+        if (profile.assumeRole != null) {
+            this.assumeRole = new AWSAssumeRole(this, profile.assumeRole.getRoleArn(), profile.assumeRole.getSessionName(), profile.burp);
+        }
     }
 
     public AWSProfile(String name, String accessKeyId, String secretKey, String region, String service)
@@ -44,6 +53,14 @@ public class AWSProfile implements Serializable
         this.service = service;
     }
 
+    public AWSProfile(String name, String accessKeyId, String secretKey, String region, String service, String roleArn, BurpExtender burp)
+    {
+        this(name, accessKeyId, secretKey, region, service);
+        if (roleArn != null && !roleArn.equals("")) {
+            this.assumeRole = new AWSAssumeRole(this, roleArn, "burp-awsig", burp);
+        }
+    }
+
     public static AWSProfile fromEnvironment()
     {
         final String envAccessKeyId = System.getenv("AWS_ACCESS_KEY_ID");
@@ -54,6 +71,36 @@ public class AWSProfile implements Serializable
             }
         }
         return null;
+    }
+
+    public JsonObject toJsonObject()
+    {
+        return Json.createObjectBuilder()
+                .add("name", name)
+                .add("accessKeyId", accessKeyId)
+                .add("secretKey", secretKey)
+                .add("region", region)
+                .add("service", service)
+                .add("roleArn", assumeRole == null ? "" : assumeRole.getRoleArn())
+                .build();
+    }
+
+    public static AWSProfile fromJsonObject(final JsonObject obj, BurpExtender burp)
+    {
+        //JsonObject obj = Json.createReader(new StringReader(jsonString)).readObject();
+        return new AWSProfile(
+                obj.getString("name"),
+                obj.getString("accessKeyId"),
+                obj.getString("secretKey"),
+                obj.getString("region"),
+                obj.getString("service"),
+                obj.getString("roleArn"),
+                burp);
+    }
+
+    public AWSAssumeRole getAssumeRole()
+    {
+        return this.assumeRole;
     }
 
     public static ArrayList<AWSProfile> fromCredentialPath(final Path path)
@@ -132,6 +179,19 @@ public class AWSProfile implements Serializable
             }
         }
         return exportLines.size();
+    }
+
+    public AWSCredentials getPermanentCredentials()
+    {
+        return new AWSCredentials(this.accessKeyId, this.secretKey);
+    }
+
+    public AWSCredentials getCredentials()
+    {
+        if (assumeRole != null) {
+            return assumeRole.getCredentials();
+        }
+        return getPermanentCredentials();
     }
 
     @Override

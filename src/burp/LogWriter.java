@@ -9,6 +9,7 @@ public class LogWriter
     final public static int INFO_LEVEL = 1;
     final public static int ERROR_LEVEL = 2;
     final public static int FATAL_LEVEL = 3;
+    final public static int NULL_LEVEL = 100;
 
     private PrintWriter out;
     private PrintWriter err;
@@ -35,6 +36,13 @@ public class LogWriter
         this.err = new PrintWriter(errStream, true);
         this.logLevel = logLevel;
     }
+
+    public LogWriter()
+    {
+        this.logLevel = NULL_LEVEL;
+    }
+
+    public PrintWriter getPrintWriter() { return this.out; }
 
     public void setLevel(int level) { this.logLevel = level; }
 
