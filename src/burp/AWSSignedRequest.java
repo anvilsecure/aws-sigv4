@@ -340,6 +340,10 @@ public class AWSSignedRequest
             // for services other than s3 the URI must be normalized by removing relative elements and duplicate path separators
             uri = uri.replaceAll("[/]{2,}", "/");
         }
+        if (this.service.toLowerCase().equals("serverlessrepo")) {
+	    // need to double url encode
+            uri = this.helpers.urlEncode(uri);
+        }
         if (uri.equals("")) {
             uri = "/";
         }
