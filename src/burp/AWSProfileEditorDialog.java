@@ -78,8 +78,8 @@ public class AWSProfileEditorDialog extends JDialog
         JPanel buttonPanel = new JPanel();
         buttonPanel.add(okButton);
         buttonPanel.add(cancelButton);
-        outerPanel.add(statusLabel, newConstraint(0, 5, 2, 1));
-        outerPanel.add(buttonPanel, newConstraint(0, 6, 2, 1));
+        outerPanel.add(statusLabel, newConstraint(0, 6, 2, 1));
+        outerPanel.add(buttonPanel, newConstraint(0, 7, 2, 1));
 
         cancelButton.addActionListener(new ActionListener()
         {
