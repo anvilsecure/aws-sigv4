@@ -58,4 +58,9 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
     {
         disableField(this.secretKeyTextField);
     }
+
+    public void disableAssumeRoleArn()
+    {
+        disableField(this.assumeRoleTextField);
+    }
 }

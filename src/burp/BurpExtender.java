@@ -602,6 +602,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                     dialog.disableName();
                                     dialog.disableKeyId();
                                     dialog.disableSecret();
+                                    dialog.disableAssumeRoleArn();
                                     // set focus to first missing field
                                     if (signedRequest.getRegion().equals("")) {
                                         dialog.regionTextField.requestFocus();
@@ -657,6 +658,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             dialog.disableName();
                             dialog.disableKeyId();
                             dialog.disableSecret();
+                            dialog.disableAssumeRoleArn();
                             dialog.setVisible(true);
                             if (dialog.getProfile() != null) {
                                 // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.

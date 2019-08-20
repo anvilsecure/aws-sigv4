@@ -146,7 +146,9 @@ public class AWSSignedRequest
     {
         AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, helpers, logger);
         signedRequest.applyProfile(profile);
-        signedRequest.init(signedRequest.requestBytes);
+        // XXX if we call init() here and the original request has a signature, the key in profile is overridden.
+        // there was a reason for calling init() here but not sure if its still necessary
+        //signedRequest.init(signedRequest.requestBytes);
         return signedRequest;
     }
 
