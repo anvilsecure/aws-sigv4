@@ -311,7 +311,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             {
                 JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
                 chooser.setFileHidingEnabled(false);
-                if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                if (chooser.showOpenDialog(getUiComponent()) == JFileChooser.APPROVE_OPTION) {
                     final Path exportPath = Paths.get(chooser.getSelectedFile().getPath());
                     ArrayList<AWSProfile> awsProfiles = new ArrayList<>();
                     for (final String name : profileNameMap.keySet()) {
