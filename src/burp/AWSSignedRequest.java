@@ -45,6 +45,10 @@ public class AWSSignedRequest
     private static Pattern credentialValueRegex = Pattern.compile("^[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{0,64}/[a-z0-9-]{0,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
 
+    // service names used in credential parameter and ARNs
+    private static final String SERVICE_NAME_S3 = "s3";
+    private static final String SERVICE_NAME_SAR = "serverlessrepo";
+
     @Override
     public String toString()
     {
@@ -118,7 +122,7 @@ public class AWSSignedRequest
      */
     public boolean isS3Request()
     {
-        return this.service.toLowerCase().equals("s3");
+        return this.service.toLowerCase().equals(SERVICE_NAME_S3);
     }
 
     /*
@@ -341,10 +345,12 @@ public class AWSSignedRequest
         if (!isS3Request()) {
             // for services other than s3 the URI must be normalized by removing relative elements and duplicate path separators
             uri = uri.replaceAll("[/]{2,}", "/");
-        }
-        if (this.service.toLowerCase().equals("serverlessrepo")) {
-	    // need to double url encode
-            uri = this.helpers.urlEncode(uri);
+
+            // checks for other non-s3 services
+            if (this.service.toLowerCase().equals(SERVICE_NAME_SAR)) {
+                // need to double url encode
+                uri = this.helpers.urlEncode(uri);
+            }
         }
         if (uri.equals("")) {
             uri = "/";
