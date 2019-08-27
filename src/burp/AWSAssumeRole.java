@@ -19,12 +19,14 @@ public class AWSAssumeRole implements Cloneable
     private AWSProfile profile;
     private String roleArn;
     private String sessionName;
+    private int durationSeconds;
     private AWSCredentials credentials;
     private BurpExtender burp;
 
     private static final String STS_HOST = "sts.amazonaws.com";
     private static int CREDENTIAL_RENEWAL_AGE = 60; // seconds
-    private static int CREDENTIAL_LIFETIME_DEFAULT = 900; // 900 is aws minimum
+    public static final int CREDENTIAL_LIFETIME_MIN = 900; // 900 is aws minimum
+    public static final String ROLE_SESSION_NAME_DEFAULT = "burp-awsig";
 
     public String getRoleArn()
     {
@@ -36,16 +38,22 @@ public class AWSAssumeRole implements Cloneable
         return this.sessionName;
     }
 
-    protected AWSAssumeRole clone()
+    public int getDurationSeconds()
     {
-        return new AWSAssumeRole(new AWSProfile(this.profile), this.roleArn, this.sessionName, this.burp);
+	return this.durationSeconds;
     }
 
-    public AWSAssumeRole(final AWSProfile profile, final String roleArn, final String sessionName, BurpExtender burp)
+    protected AWSAssumeRole clone()
+    {
+        return new AWSAssumeRole(new AWSProfile(this.profile), this.roleArn, this.sessionName, this.durationSeconds, this.burp);
+    }
+
+    public AWSAssumeRole(final AWSProfile profile, final String roleArn, final String sessionName, final int durationSeconds, BurpExtender burp)
     {
         this.profile = profile;
         this.roleArn = roleArn;
         this.sessionName = sessionName;
+	this.durationSeconds = durationSeconds < CREDENTIAL_LIFETIME_MIN ? CREDENTIAL_LIFETIME_MIN : durationSeconds;
         this.burp = burp;
     }
 
@@ -67,7 +75,7 @@ public class AWSAssumeRole implements Cloneable
         headers.add("Content-Type: application/x-www-form-urlencoded; charset=utf-8");
         byte[] body = burp.helpers.stringToBytes(
                 String.format("Action=AssumeRole&Version=2011-06-15&RoleArn=%s&RoleSessionName=%s&DurationSeconds=%s",
-                        burp.helpers.urlEncode(this.roleArn), burp.helpers.urlEncode(this.sessionName), CREDENTIAL_LIFETIME_DEFAULT));
+                        burp.helpers.urlEncode(this.roleArn), burp.helpers.urlEncode(this.sessionName), this.durationSeconds));
 
         AWSSignedRequest signedRequest = new AWSSignedRequest(
                 burp.helpers.buildHttpService(STS_HOST, 443, true),
@@ -105,6 +113,7 @@ public class AWSAssumeRole implements Cloneable
         try {
             response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
         } catch (IOException | InterruptedException exc) {
+	    burp.logger.error(String.format("Failed to send request to %s: %s", STS_HOST, exc.toString()));
             return false;
         }
 
