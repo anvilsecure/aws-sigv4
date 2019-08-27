@@ -263,7 +263,7 @@ public class AWSProfileImportDialog extends JDialog
         if (!Files.exists(credPath)) {
             burp.logger.error(String.format("Attempted to import credentials from non-existent file: %s", credPath));
         }
-        ArrayList<AWSProfile> profiles = AWSProfile.fromCredentialPath(credPath);
+        ArrayList<AWSProfile> profiles = AWSProfile.fromCredentialPath(credPath, this.burp);
         burp.logger.info(String.format("Importing %d credentials from: %s", profiles.size(), credPath));
         updateImportTable(profiles, credPath.toString());
     }
