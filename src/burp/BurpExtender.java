@@ -23,6 +23,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String SETTING_DEFAULT_PROFILE_NAME = "DefaultProfileName";
     private static final String SETTING_LOG_LEVEL = "LogLevel";
     private static final String SETTING_CUSTOM_HEADERS = "CustomSignedHeaders";
+    private static final String SETTING_CUSTOM_HEADERS_OVERWRITE = "CustomSignedHeadersOverwrite";
     private static final String SETTING_ADDITIONAL_SIGNED_HEADER_NAMES = "AdditionalSignedHeaderNames";
     private static final String SETTING_IN_SCOPE_ONLY = "InScopeOnly";
 
@@ -44,6 +45,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private JTable profileTable;
     private JTable customHeadersTable;
+    private JCheckBox customHeadersOverwriteCheckbox;
     private JScrollPane outerScrollPane;
 
     // mimic burp colors
@@ -152,6 +154,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JLabel customHeadersLabel = new JLabel("Custom Signed Headers");
         customHeadersLabel.setForeground(this.textOrange);
         customHeadersLabel.setFont(sectionFont);
+        customHeadersOverwriteCheckbox = new JCheckBox("Overwrite existing headers");
+        customHeadersOverwriteCheckbox.setToolTipText("Default behavior is to append these headers even if they exist in original request");
         JPanel customHeadersButtonPanel = new JPanel();
         customHeadersButtonPanel.setLayout(new GridLayout(3, 1));
         JButton addCustomHeaderButton = new JButton("Add");
@@ -168,12 +172,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         GridBagConstraints c100 = new GridBagConstraints(); c100.gridy = 0; c100.gridwidth = 2; c100.anchor = GridBagConstraints.FIRST_LINE_START;
         GridBagConstraints c101 = new GridBagConstraints(); c101.gridy = 1; c101.gridwidth = 2; c101.anchor = GridBagConstraints.FIRST_LINE_START; c101.insets = new Insets(10, 0, 10, 0);
-        GridBagConstraints c102 = new GridBagConstraints(); c102.gridy = 2; c102.gridx = 0; c102.anchor = GridBagConstraints.FIRST_LINE_START;
-        GridBagConstraints c103 = new GridBagConstraints(); c103.gridy = 2; c103.gridx = 1; c103.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c102 = new GridBagConstraints(); c102.gridy = 2; c102.gridx = 1; c102.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c103 = new GridBagConstraints(); c103.gridy = 3; c103.gridx = 0; c103.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c104 = new GridBagConstraints(); c104.gridy = 3; c104.gridx = 1; c104.anchor = GridBagConstraints.FIRST_LINE_START;
         customHeadersPanel.add(customHeadersLabel, c100);
         customHeadersPanel.add(new JLabel("Add request headers to be included in the signature. These can be edited in place."), c101);
-        customHeadersPanel.add(customHeadersButtonPanel, c102);
-        customHeadersPanel.add(headersScrollPane, c103);
+        customHeadersPanel.add(customHeadersOverwriteCheckbox, c102);
+        customHeadersPanel.add(customHeadersButtonPanel, c103);
+        customHeadersPanel.add(headersScrollPane, c104);
 
         //
         // additional headers to sign
@@ -441,6 +447,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.callbacks.saveExtensionSetting(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(logger.getLevel()));
         this.callbacks.saveExtensionSetting(SETTING_CUSTOM_HEADERS, String.join("\n", getCustomHeadersFromUI()));
+        this.callbacks.saveExtensionSetting(SETTING_CUSTOM_HEADERS_OVERWRITE, this.customHeadersOverwriteCheckbox.isSelected() ? "true" : "false");
         this.callbacks.saveExtensionSetting(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, String.join(",", getAdditionalSignedHeadersFromUI()));
         this.callbacks.saveExtensionSetting(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected() ? "true" : "false");
     }
@@ -470,6 +477,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         if (setting != null) {
             setCustomHeadersInUI(setting);
         }
+        setting = this.callbacks.loadExtensionSetting(SETTING_CUSTOM_HEADERS_OVERWRITE);
+        if (setting != null) {
+            this.customHeadersOverwriteCheckbox.setSelected(setting.equals("true"));
+        }
+
         setting = this.callbacks.loadExtensionSetting(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES);
         if (setting != null) {
             this.additionalSignedHeadersField.setText(setting);
@@ -896,7 +908,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
 
         // add any user-specified, custom HTTP headers
-        signedRequest.addSignedHeaders(getCustomHeadersFromUI());
+        signedRequest.addSignedHeaders(getCustomHeadersFromUI(), customHeadersOverwriteCheckbox.isSelected());
 
         // add names of additional headers to sign
         signedRequest.addSignedHeaderNames(getAdditionalSignedHeadersFromUI());

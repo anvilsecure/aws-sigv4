@@ -269,16 +269,49 @@ public class AWSSignedRequest
     /* use this method to add additional signed headers. no attempt is made to prevent
     adding duplicate headers.
     */
-    public void addSignedHeaders(final List<String> newHeaders)
+    public void addSignedHeaders(final List<String> newHeaders, final boolean overwriteDupes)
     {
         if (newHeaders.size() > 0) {
-            ArrayList<String> headers = (ArrayList<String>) this.request.getHeaders();
-            for (final String header : newHeaders) {
-                logger.debug("Adding custom signed header: " + header);
-                this.signedHeaderSet.add(splitHttpHeader(header)[0].toLowerCase());
-                headers.add(header);
+            List<String> finalHeaders = new ArrayList<>();
+            List<String> originalHeaders = this.request.getHeaders();
+            if (overwriteDupes) {
+                Map<String, String> newHeadersMap = new HashMap<>();
+                for (String header : newHeaders) {
+                    final String[] h = splitHttpHeader(header);
+                    newHeadersMap.put(h[0], header);
+                }
+
+                // build set of existing header names
+                Set<String> headerNameSet = new HashSet<>();
+                finalHeaders.add(originalHeaders.remove(0)); // get path, method
+
+                // handle name conflicts between old and new headers
+                for (final String header : originalHeaders) {
+                    final String[] h = splitHttpHeader(header);
+                    headerNameSet.add(h[0]);
+                    if (newHeadersMap.containsKey(h[0])) {
+                        // ignore orignal header in favor of new value
+                        logger.debug("Adding custom header: " + h[0]);
+                        finalHeaders.add(newHeadersMap.get(h[0]));
+                        this.signedHeaderSet.add(h[0]);
+                    }
+                    else {
+                        finalHeaders.add(header);
+                    }
+                }
+                // now handle newHeaders that were not in original header list
+                for (final String header : newHeaders) {
+                    if (!headerNameSet.contains(splitHttpHeader(header)[0])) {
+                        finalHeaders.add(header);
+                    }
+                }
             }
-            this.requestBytes = this.helpers.buildHttpMessage(headers, getPayloadBytes());
+            else {
+                // allow dupes
+                finalHeaders.addAll(originalHeaders);
+                finalHeaders.addAll(newHeaders);
+            }
+            this.requestBytes = this.helpers.buildHttpMessage(finalHeaders, getPayloadBytes());
             this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
         }
     }
