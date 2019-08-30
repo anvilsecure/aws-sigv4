@@ -438,59 +438,46 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 jsonArrayBuilder.add(this.profileNameMap.get(name).toJsonObject());
             }
         }
-        JsonArray jsonArray = jsonArrayBuilder.build();
-        this.callbacks.saveExtensionSetting(SETTING_PROFILES, jsonArray.toString());
-        logger.info(String.format("Saved %d profile(s)", jsonArray.size()));
+        JsonArray profileArray = jsonArrayBuilder.build();
+        logger.info(String.format("Saved %d profile(s)", profileArray.size()));
 
-        this.callbacks.saveExtensionSetting(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected() ? "true" : "false");
-        this.callbacks.saveExtensionSetting(SETTING_EXTENSION_ENABLED, this.signingEnabledCheckBox.isSelected() ? "true" : "false");
-        this.callbacks.saveExtensionSetting(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
-        this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(logger.getLevel()));
-        this.callbacks.saveExtensionSetting(SETTING_CUSTOM_HEADERS, String.join("\n", getCustomHeadersFromUI()));
-        this.callbacks.saveExtensionSetting(SETTING_CUSTOM_HEADERS_OVERWRITE, this.customHeadersOverwriteCheckbox.isSelected() ? "true" : "false");
-        this.callbacks.saveExtensionSetting(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, String.join(",", getAdditionalSignedHeadersFromUI()));
-        this.callbacks.saveExtensionSetting(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected() ? "true" : "false");
+        final String jsonSettings = Json.createObjectBuilder()
+                .add(SETTING_PROFILES, profileArray)
+                .add(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected())
+                .add(SETTING_EXTENSION_ENABLED, this.signingEnabledCheckBox.isSelected())
+                .add(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName())
+                .add(SETTING_LOG_LEVEL, logger.getLevel())
+                .add(SETTING_CUSTOM_HEADERS, Json.createArrayBuilder(getCustomHeadersFromUI()).build())
+                .add(SETTING_CUSTOM_HEADERS_OVERWRITE, this.customHeadersOverwriteCheckbox.isSelected())
+                .add(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, String.join(",", getAdditionalSignedHeadersFromUI()))
+                .add(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected())
+                .build().toString();
+        this.callbacks.saveExtensionSetting("JsonSettings", jsonSettings);
     }
 
     private void loadExtensionSettings()
     {
-        final String profilesJsonString = this.callbacks.loadExtensionSetting(SETTING_PROFILES);
-        if (profilesJsonString != null) {
-            final JsonArray profilesJson = Json.createReader(new StringReader(profilesJsonString)).readArray();
-            for (final JsonValue obj : profilesJson) {
+        final JsonObject jsonSettings = Json.createReader(new StringReader(this.callbacks.loadExtensionSetting("JsonSettings"))).readObject();
+        final JsonArray profileArray = jsonSettings.getJsonArray(SETTING_PROFILES);
+        if (profileArray != null) {
+            for (JsonValue obj : profileArray) {
                 addProfile(AWSProfile.fromJsonObject((JsonObject) obj, this));
             }
-            logger.info(String.format("Loaded %s profile(s)", profilesJson.size()));
+            logger.info(String.format("Loaded %s profile(s)", profileArray.size()));
         }
 
-        setDefaultProfileName(this.callbacks.loadExtensionSetting(SETTING_DEFAULT_PROFILE_NAME));
-
-        String setting = this.callbacks.loadExtensionSetting(SETTING_PERSISTENT_PROFILES);
-        if ((setting != null) && setting.toLowerCase().equals("true")) {
-            this.persistProfilesCheckBox.setSelected(true);
+        setDefaultProfileName(jsonSettings.getString(SETTING_DEFAULT_PROFILE_NAME, null));
+        this.persistProfilesCheckBox.setSelected(jsonSettings.getBoolean(SETTING_PERSISTENT_PROFILES, false));
+        this.signingEnabledCheckBox.setSelected(jsonSettings.getBoolean(SETTING_EXTENSION_ENABLED, true));
+        List<String> customHeaders = new ArrayList<>();
+        for (final JsonValue header : jsonSettings.getJsonArray(SETTING_CUSTOM_HEADERS)) {
+            logger.debug("loading custom header: "+((JsonString)header).getString());
+            customHeaders.add(((JsonString)header).getString());
         }
-        setting = this.callbacks.loadExtensionSetting(SETTING_EXTENSION_ENABLED);
-        if ((setting == null) || setting.toLowerCase().equals("true")) {
-            this.signingEnabledCheckBox.setSelected(true);
-        }
-        setting = this.callbacks.loadExtensionSetting(SETTING_CUSTOM_HEADERS);
-        if (setting != null) {
-            setCustomHeadersInUI(setting);
-        }
-        setting = this.callbacks.loadExtensionSetting(SETTING_CUSTOM_HEADERS_OVERWRITE);
-        if (setting != null) {
-            this.customHeadersOverwriteCheckbox.setSelected(setting.equals("true"));
-        }
-
-        setting = this.callbacks.loadExtensionSetting(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES);
-        if (setting != null) {
-            this.additionalSignedHeadersField.setText(setting);
-        }
-
-        setting = this.callbacks.loadExtensionSetting(SETTING_IN_SCOPE_ONLY);
-        if ((setting != null) && setting.toLowerCase().equals("true")) {
-            this.inScopeOnlyCheckBox.setSelected(true);
-        }
+        setCustomHeadersInUI(customHeaders);
+        this.customHeadersOverwriteCheckbox.setSelected(jsonSettings.getBoolean(SETTING_CUSTOM_HEADERS_OVERWRITE, false));
+        this.additionalSignedHeadersField.setText(jsonSettings.getString(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, ""));
+        this.inScopeOnlyCheckBox.setSelected(jsonSettings.getBoolean(SETTING_IN_SCOPE_ONLY, false));
     }
 
     @Override
@@ -882,10 +869,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return headers;
     }
 
-    private void setCustomHeadersInUI(final String customHeaderText)
+    private void setCustomHeadersInUI(final List<String> customHeaders)
     {
         DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
-        for (final String header : customHeaderText.split("\n")) {
+        for (final String header : customHeaders) {
             final String[] tokens = header.split("[\\s:]+");
             if (tokens.length == 1) {
                 model.addRow(new Object[]{tokens[0], ""});
