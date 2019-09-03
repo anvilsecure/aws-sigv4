@@ -1,7 +1,7 @@
 package burp;
 
-import jdk.internal.net.http.HttpRequestBuilderImpl;
-
+import javax.json.Json;
+import javax.json.JsonObject;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.URI;
@@ -10,9 +10,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
-
-import javax.json.Json;
-import javax.json.JsonObject;
 
 public class AWSAssumeRole implements Cloneable
 {
@@ -53,7 +50,7 @@ public class AWSAssumeRole implements Cloneable
         this.profile = profile;
         this.roleArn = roleArn;
         this.sessionName = sessionName;
-	this.durationSeconds = durationSeconds < CREDENTIAL_LIFETIME_MIN ? CREDENTIAL_LIFETIME_MIN : durationSeconds;
+        this.durationSeconds = durationSeconds < CREDENTIAL_LIFETIME_MIN ? CREDENTIAL_LIFETIME_MIN : durationSeconds;
         this.burp = burp;
     }
 
