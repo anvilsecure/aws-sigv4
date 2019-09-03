@@ -266,8 +266,8 @@ public class AWSSignedRequest
         this.amzDateYMD = this.amzDate.substring(0, 8); // date for credential param
     }
 
-    /* use this method to add additional signed headers. no attempt is made to prevent
-    adding duplicate headers.
+    /*
+    use this method to add additional signed headers.
     */
     public void addSignedHeaders(final List<String> newHeaders, final boolean overwriteDupes)
     {
@@ -290,10 +290,9 @@ public class AWSSignedRequest
                     final String[] h = splitHttpHeader(header);
                     headerNameSet.add(h[0]);
                     if (newHeadersMap.containsKey(h[0])) {
-                        // ignore orignal header in favor of new value
+                        // ignore original header in favor of new value
                         logger.debug("Adding custom header: " + h[0]);
                         finalHeaders.add(newHeadersMap.get(h[0]));
-                        this.signedHeaderSet.add(h[0]);
                     }
                     else {
                         finalHeaders.add(header);
@@ -310,6 +309,9 @@ public class AWSSignedRequest
                 // allow dupes
                 finalHeaders.addAll(originalHeaders);
                 finalHeaders.addAll(newHeaders);
+            }
+            for (final String header : newHeaders) {
+                this.signedHeaderSet.add(splitHttpHeader(header)[0].toLowerCase());
             }
             this.requestBytes = this.helpers.buildHttpMessage(finalHeaders, getPayloadBytes());
             this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);

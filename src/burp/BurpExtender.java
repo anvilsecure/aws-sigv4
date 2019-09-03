@@ -471,7 +471,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.signingEnabledCheckBox.setSelected(jsonSettings.getBoolean(SETTING_EXTENSION_ENABLED, true));
         List<String> customHeaders = new ArrayList<>();
         for (final JsonValue header : jsonSettings.getJsonArray(SETTING_CUSTOM_HEADERS)) {
-            logger.debug("loading custom header: "+((JsonString)header).getString());
             customHeaders.add(((JsonString)header).getString());
         }
         setCustomHeadersInUI(customHeaders);
@@ -857,7 +856,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     /* get the additional headers specified in the UI */
     private List<String> getCustomHeadersFromUI()
     {
-        ArrayList<String> headers = new ArrayList<>();
+        List<String> headers = new ArrayList<>();
         DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
         for (int i = 0; i < model.getRowCount(); i++) {
             final String name = (String) model.getValueAt(i, 0);
