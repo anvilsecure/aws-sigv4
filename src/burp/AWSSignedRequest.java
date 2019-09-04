@@ -143,7 +143,10 @@ public class AWSSignedRequest
 
     public AWSProfile getAnonymousProfile()
     {
-        return new AWSProfile("", this.accessKeyId, "", this.region, this.service);
+        return new AWSProfile.Builder("", this.accessKeyId, "")
+                .withRegion(this.region)
+                .withService(this.service)
+                .build();
     }
 
     public static AWSSignedRequest fromUnsignedRequest(final IHttpRequestResponse messageInfo, final AWSProfile profile, IExtensionHelpers helpers, LogWriter logger)
