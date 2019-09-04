@@ -16,13 +16,13 @@ public class AWSMessageEditorTab implements IMessageEditorTab
     private ITextEditor messageTextEditor;
     private byte[] content;
 
-    public AWSMessageEditorTab(IMessageEditorController controller, boolean editable, BurpExtender burp, IBurpExtenderCallbacks callbacks, LogWriter logger)
+    public AWSMessageEditorTab(IMessageEditorController controller, boolean editable, BurpExtender burp)
     {
         this.controller = controller;
         this.burp = burp;
-        this.callbacks = callbacks;
-        this.helpers = callbacks.getHelpers();
-        this.logger = logger;
+        this.callbacks = burp.callbacks;
+        this.helpers = burp.helpers;
+        this.logger = burp.logger;
     }
 
     @Override
@@ -52,7 +52,7 @@ public class AWSMessageEditorTab implements IMessageEditorTab
         this.content = content;
 
         try {
-            AWSSignedRequest signedRequest = new AWSSignedRequest(this.controller.getHttpService(), this.content, this.helpers, this.logger);
+            AWSSignedRequest signedRequest = new AWSSignedRequest(this.controller.getHttpService(), this.content, this.burp);
             final AWSProfile profile = this.burp.customizeSignedRequest(signedRequest);
             if (profile == null) {
                 this.messageTextEditor.setText(this.helpers.stringToBytes(

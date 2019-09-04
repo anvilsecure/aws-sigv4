@@ -214,9 +214,9 @@ public class AWSProfileImportDialog extends JDialog
         model.setRowCount(0); // clear table
 
         for (AWSProfile profile : profiles) {
-            this.profileNameMap.put(profile.name, new NewAWSProfile(profile, source));
-            if (!selectionMap.containsKey(profile.name)) {
-                selectionMap.put(profile.name, true);
+            this.profileNameMap.put(profile.getName(), new NewAWSProfile(profile, source));
+            if (!selectionMap.containsKey(profile.getName())) {
+                selectionMap.put(profile.getName(), true);
             }
         }
 
@@ -226,7 +226,7 @@ public class AWSProfileImportDialog extends JDialog
 
         for (final String name : profileNames) {
             NewAWSProfile newProfile = this.profileNameMap.get(name);
-            model.addRow(new Object[]{selectionMap.get(name), newProfile.awsProfile.name, newProfile.awsProfile.accessKeyId, newProfile.source});
+            model.addRow(new Object[]{selectionMap.get(name), newProfile.awsProfile.getName(), newProfile.awsProfile.getAccessKeyId(), newProfile.source});
         }
     }
 

@@ -30,7 +30,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String NO_DEFAULT_PROFILE = "";
 
     protected IExtensionHelpers helpers;
-    private IBurpExtenderCallbacks callbacks;
+    protected IBurpExtenderCallbacks callbacks;
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, AWSProfile> profileNameMap; // map name to profile
     protected LogWriter logger;
@@ -92,7 +92,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c03 = new GridBagConstraints(); c03.anchor = GridBagConstraints.FIRST_LINE_START; c03.gridy = 3;
 
         globalSettingsPanel.add(settingsLabel, c00);
-        globalSettingsPanel.add(new JLabel("<html>Change plugin behavior. Set <i>Default Profile</i> to force certain credentials to be used to sign requests."), c01);
+        globalSettingsPanel.add(new JLabel("<html>Change plugin behavior. Set <i>Default Profile</i> to force signing of all requests with the specified profile credentials."), c01);
         globalSettingsPanel.add(checkBoxPanel, c02);
         globalSettingsPanel.add(otherSettingsPanel, c03);
 
@@ -458,11 +458,21 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private void loadExtensionSettings()
     {
-        final JsonObject jsonSettings = Json.createReader(new StringReader(this.callbacks.loadExtensionSetting("JsonSettings"))).readObject();
+        final String jsonSettingsString = this.callbacks.loadExtensionSetting("JsonSettings");
+        if (jsonSettingsString == null || jsonSettingsString.equals("")) {
+            logger.info("No plugin settings found");
+            return;
+        }
+
+        final JsonObject jsonSettings = Json.createReader(new StringReader(jsonSettingsString)).readObject();
         final JsonArray profileArray = jsonSettings.getJsonArray(SETTING_PROFILES);
         if (profileArray != null) {
             for (JsonValue obj : profileArray) {
-                addProfile(AWSProfile.fromJsonObject((JsonObject) obj, this));
+                try {
+                    addProfile(AWSProfile.fromJsonObject((JsonObject) obj, this));
+                } catch (IllegalArgumentException exc) {
+                    logger.error("Failed to load saved profile: "+exc.getMessage());
+                }
             }
             logger.info(String.format("Loaded %s profile(s)", profileArray.size()));
         }
@@ -483,7 +493,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public IMessageEditorTab createNewInstance(IMessageEditorController controller, boolean editable)
     {
-        return new AWSMessageEditorTab(controller, editable, this, this.callbacks, this.logger);
+        return new AWSMessageEditorTab(controller, editable, this);
     }
 
     @Override
@@ -560,7 +570,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         @Override
                         public void actionPerformed(ActionEvent actionEvent)
                         {
-                            AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], helpers, logger);
+                            AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], BurpExtender.this);
                             final AWSProfile profile = customizeSignedRequest(signedRequest);
                             String signedUrl = ""; // clear clipboard on error
                             if (profile == null) {
@@ -587,7 +597,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             public void actionPerformed(ActionEvent actionEvent)
                             {
                                 JMenuItem sigItem = (JMenuItem)actionEvent.getSource();
-                                AWSSignedRequest signedRequest = AWSSignedRequest.fromUnsignedRequest(messages[0], profileNameMap.get(sigItem.getText()), helpers, logger);
+                                AWSSignedRequest signedRequest = AWSSignedRequest.fromUnsignedRequest(messages[0], profileNameMap.get(sigItem.getText()), BurpExtender.this);
                                 final AWSProfile profile = customizeSignedRequest(signedRequest);
                                 if (profile == null) {
                                     // XXX maybe use an "Add Profile" dialog here?
@@ -630,7 +640,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         @Override
                         public void actionPerformed(ActionEvent actionEvent)
                         {
-                            AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], helpers, logger);
+                            AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], BurpExtender.this);
                             final AWSProfile sigProfile = signedRequest.getAnonymousProfile(); // build profile from original request
                             final AWSProfile savedProfile = customizeSignedRequest(signedRequest); // get profile used to sign original request (if it exists)
                             if (savedProfile == null) {
@@ -646,10 +656,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 } // else... XXX maybe display an error dialog here
                                 return;
                             }
-                            AWSProfile editedProfile = savedProfile.clone(); // get profile as saved by the accessKey
+                            AWSProfile editedProfile = new AWSProfile.Builder(savedProfile) // get profile as saved by the accessKey
                             // some values may differ from what are saved for the profile, so set them here.
-                            editedProfile.region = sigProfile.region;
-                            editedProfile.service = sigProfile.service;
+                                    .withRegion(sigProfile.getRegion())
+                                    .withService(sigProfile.getService())
+                                    .build();
                             AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Edit Signature", true, editedProfile, BurpExtender.this);
                             callbacks.customizeUiComponent(dialog);
                             // disable profile name and secret since they will have to be changed in the top-level plugin tab.
@@ -703,78 +714,80 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         for (final String name : profileNames) {
             AWSProfile profile = this.profileNameMap.get(name);
-            model.addRow(new Object[]{profile.name, profile.accessKeyId, profile.secretKey, profile.region, profile.service});
+            model.addRow(new Object[]{profile.getName(), profile.getAccessKeyId(), profile.getSecretKey(), profile.getRegion(), profile.getService()});
             defaultProfileComboBox.addItem(name);
         }
         setDefaultProfileName(defaultProfileName);
     }
 
 
-    protected boolean addProfile(AWSProfile profile)
+    protected void addProfile(AWSProfile profile)
     {
         // NOTE: validation check (via profile.isValid) is intentionally omitted here. This is so users can
         // deliberately specify invalid values for testing purposes.
-        if (profile.name.length() > 0) {
-            AWSProfile p1 = this.profileNameMap.get(profile.name);
-            AWSProfile p2 = this.profileKeyIdMap.get(profile.accessKeyId);
+        if (profile.getName().length() > 0) {
+            AWSProfile p1 = this.profileNameMap.get(profile.getName());
+            AWSProfile p2 = this.profileKeyIdMap.get(profile.getAccessKeyId());
             if ((p2 != null) && (p1 == null)) {
                 updateStatus("Profiles must have a unique accessKeyId");
-                return false;
+                throw new IllegalArgumentException("Profiles must have a unique accessKeyId");
             }
             // for accessKeyId updates, clean up the old id
             if (p1 != null) {
-                if (this.profileKeyIdMap.containsKey(p1.accessKeyId)) {
-                    this.profileKeyIdMap.remove(p1.accessKeyId);
+                if (this.profileKeyIdMap.containsKey(p1.getAccessKeyId())) {
+                    this.profileKeyIdMap.remove(p1.getAccessKeyId());
                 }
             }
-            this.profileKeyIdMap.put(profile.accessKeyId, profile);
-            this.profileNameMap.put(profile.name, profile);
+            this.profileKeyIdMap.put(profile.getAccessKeyId(), profile);
+            this.profileNameMap.put(profile.getName(), profile);
             updateAwsProfilesUI();
             if (p1 == null) {
-                updateStatus("Added profile: " + profile.name);
+                updateStatus("Added profile: " + profile.getName());
             }
             else {
-                updateStatus("Saved profile: " + profile.name);
+                updateStatus("Saved profile: " + profile.getName());
             }
-            return true;
+            return;
         }
-        return false;
+        throw new IllegalArgumentException("AWSProfile name must not be blank");
     }
 
     /*
     if newProfile is valid, delete oldProfile and add newProfile.
      */
-    protected boolean updateProfile(final AWSProfile oldProfile, final AWSProfile newProfile)
+    protected void updateProfile(final AWSProfile oldProfile, final AWSProfile newProfile)
     {
         if (oldProfile == null) {
-            return addProfile(newProfile);
+            addProfile(newProfile);
+            return;
         }
-        if (newProfile.name.length() > 0) {
-            // remove any profile with same name
-            AWSProfile p1 = this.profileNameMap.get(oldProfile.name);
-            AWSProfile p2 = this.profileKeyIdMap.get(oldProfile.accessKeyId);
-            if ((p1 == null) || (p2 == null)) {
-                updateStatus("Update profile failed. Old profile doesn't exist.");
-                return false;
-            }
-            deleteProfile(oldProfile);
-            if (!addProfile(newProfile)) {
-                addProfile(oldProfile);
-                return false;
-            }
-            return true;
+        if (newProfile.getName().length() == 0) {
+            throw new IllegalArgumentException("AWSProfile name must not be blank");
         }
-        return false;
+        // remove any profile with same name
+        AWSProfile p1 = this.profileNameMap.get(oldProfile.getName());
+        AWSProfile p2 = this.profileKeyIdMap.get(oldProfile.getAccessKeyId());
+        if ((p1 == null) || (p2 == null)) {
+            updateStatus("Update profile failed. Old profile doesn't exist.");
+            throw new IllegalArgumentException("Update profile failed. Old profile doesn't exist.");
+        }
+        deleteProfile(oldProfile);
+        try {
+            addProfile(newProfile);
+        } catch (IllegalArgumentException exc) {
+            addProfile(oldProfile); // oops. add old profile back
+            throw exc;
+        }
     }
 
 
     protected void deleteProfile(AWSProfile profile)
     {
-        if (this.profileNameMap.containsKey(profile.name)) {
-            updateStatus(String.format("Deleted profile '%s'", profile.name));
+        if (this.profileNameMap.containsKey(profile.getName())) {
+            updateStatus(String.format("Deleted profile '%s'", profile.getName()));
         }
-        this.profileKeyIdMap.remove(profile.accessKeyId);
-        this.profileNameMap.remove(profile.name);
+        this.profileKeyIdMap.remove(profile.getAccessKeyId());
+        this.profileNameMap.remove(profile.getName());
         updateAwsProfilesUI();
     }
 
@@ -919,7 +932,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             if (isAwsRequest(request)) {
 
                 // use default profile, if there is one. else, match profile based on access key id in the request
-                AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this.helpers, this.logger);
+                AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this);
                 final AWSProfile profile = customizeSignedRequest(signedRequest);
                 if (profile == null) {
                     logger.error("Failed to apply custom settings to signed request");

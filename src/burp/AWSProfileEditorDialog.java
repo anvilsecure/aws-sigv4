@@ -16,6 +16,7 @@ public class AWSProfileEditorDialog extends JDialog
     protected JTextField serviceTextField;
     protected JTextField assumeRoleTextField;
     protected JButton okButton;
+    protected JLabel statusLabel;
 
     private static GridBagConstraints newConstraint(int gridx, int gridy, int gridwidth, int gridheight)
     {
@@ -70,7 +71,7 @@ public class AWSProfileEditorDialog extends JDialog
         this.assumeRoleTextField = new JTextField("", 40);
         outerPanel.add(assumeRoleTextField, newConstraint(1, 5));
 
-        JLabel statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
+        statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
         statusLabel.setForeground(burp.textOrange);
         this.okButton = new JButton("Ok");
         JButton cancelButton = new JButton("Cancel");
@@ -95,28 +96,31 @@ public class AWSProfileEditorDialog extends JDialog
             public void actionPerformed(ActionEvent actionEvent)
             {
                 AWSAssumeRole assumeRole = null;
-                if (profile != null) {
-                    // edit dialog
-                    if (profile.getAssumeRole() != null) {
-                        assumeRole = profile.getAssumeRole().clone();
-                        assumeRole.setRoleArn(assumeRoleTextField.getText());
+                try {
+                    if (profile != null && !assumeRoleTextField.getText().equals("")) {
+                        // edit dialog
+                        if (profile.getAssumeRole() != null) {
+                            assumeRole = new AWSAssumeRole.Builder(profile.getAssumeRole())
+                                    .withRoleArn(assumeRoleTextField.getText())
+                                    .build();
+                        }
+                        else {
+                            // no previous role arn
+                            assumeRole = new AWSAssumeRole.Builder(assumeRoleTextField.getText(), burp).build();
+                        }
                     }
-                    else {
-                        // no previous role arn
-                        assumeRole = new AWSAssumeRole(assumeRoleTextField.getText(), burp);
-                    }
-                }
-                AWSProfile newProfile = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
-                        .withRegion(regionTextField.getText())
-                        .withService(serviceTextField.getText())
-                        .withAssumeRole(assumeRole)
-                        .build();
-                if (burp.updateProfile(profile, newProfile)) {
+
+                    AWSProfile newProfile = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
+                            .withRegion(regionTextField.getText())
+                            .withService(serviceTextField.getText())
+                            .withAssumeRole(assumeRole)
+                            .build();
+
+                    burp.updateProfile(profile, newProfile);
                     setVisible(false);
                     dispose();
-                }
-                else {
-                    statusLabel.setText("<html><i>Invalid settings. Ensure keyId is unique and name is not empty.</i></html>");
+                } catch (IllegalArgumentException exc) {
+                    setStatusLabel("Invalid settings: " + exc.getMessage());
                 }
             }
         });
@@ -129,14 +133,22 @@ public class AWSProfileEditorDialog extends JDialog
         setLocationRelativeTo(burp.getUiComponent());
     }
 
+    protected void setStatusLabel(final String message)
+    {
+        statusLabel.setText(
+                String.format("<html><div style='width: 400px'><i>%s</i></div></html>",
+                        message.replace("<", "&lt;").replace(">", "&gt;")));
+        pack();
+    }
+
     protected void applyProfile(final AWSProfile profile)
     {
         if (profile != null) {
-            nameTextField.setText(profile.name);
-            keyIdTextField.setText(profile.accessKeyId);
-            secretKeyTextField.setText(profile.secretKey);
-            regionTextField.setText(profile.region);
-            serviceTextField.setText(profile.service);
+            nameTextField.setText(profile.getName());
+            keyIdTextField.setText(profile.getAccessKeyId());
+            secretKeyTextField.setText(profile.getSecretKey());
+            regionTextField.setText(profile.getRegion());
+            serviceTextField.setText(profile.getService());
             if (profile.getAssumeRole() != null) {
                 assumeRoleTextField.setText(profile.getAssumeRole().getRoleArn());
             }
