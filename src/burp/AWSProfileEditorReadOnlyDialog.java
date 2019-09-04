@@ -28,25 +28,30 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
             public void actionPerformed(ActionEvent actionEvent)
             {
                 AWSAssumeRole assumeRole = null;
-                if (profile != null) {
-                    // edit dialog
-                    if (profile.getAssumeRole() != null) {
-                        assumeRole = profile.getAssumeRole().clone();
-                        assumeRole.setRoleArn(assumeRoleTextField.getText());
+                try {
+                    if (profile != null && !assumeRoleTextField.getText().equals("")) {
+                        // edit dialog
+                        if (profile.getAssumeRole() != null) {
+                            assumeRole = new AWSAssumeRole.Builder(profile.getAssumeRole())
+                                    .withRoleArn(assumeRoleTextField.getText())
+                                    .build();
+                        }
+                        else {
+                            // no previous role arn
+                            assumeRole = new AWSAssumeRole.Builder(assumeRoleTextField.getText(), burp).build();
+                        }
                     }
-                    else {
-                        // no previous role arn
-                        assumeRole = new AWSAssumeRole(assumeRoleTextField.getText(), burp);
-                    }
-                }
-                editedProfile = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
-                        .withRegion(regionTextField.getText())
-                        .withService(serviceTextField.getText())
-                        .withAssumeRole(assumeRole)
-                        .build();
 
-                setVisible(false);
-                dispose();
+                    editedProfile = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
+                            .withRegion(regionTextField.getText())
+                            .withService(serviceTextField.getText())
+                            .withAssumeRole(assumeRole)
+                            .build();
+                    setVisible(false);
+                    dispose();
+                } catch (IllegalArgumentException exc) {
+                    setStatusLabel("Failed to apply changes to profile: "+exc.getMessage());
+                }
             }
         });
     }
@@ -60,13 +65,11 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
 
     public void disableName()
     {
-
         disableField(this.nameTextField);
     }
 
     public void disableKeyId()
     {
-
         disableField(this.keyIdTextField);
     }
 

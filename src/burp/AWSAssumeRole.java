@@ -21,9 +21,9 @@ public class AWSAssumeRole implements Cloneable
     private AWSCredentials credentials;
     private BurpExtender burp;
 
-    private static final String STS_HOST = "sts.amazonaws.com";
-    private static int CREDENTIAL_RENEWAL_AGE = 60; // seconds
-    public static final int CREDENTIAL_LIFETIME_MIN = 900; // 900 is aws minimum
+    private static final String AWS_STS_HOSTNAME = "sts.amazonaws.com";
+    private static int CREDENTIAL_RENEWAL_AGE = 60; // seconds before expiration
+    public static final int CREDENTIAL_LIFETIME_MIN = 900;
     public static final int CREDENTIAL_LIFETIME_MAX = 43200;
     public static final String ROLE_SESSION_NAME_DEFAULT = "burp-awsig";
 
@@ -31,21 +31,24 @@ public class AWSAssumeRole implements Cloneable
     {
         return this.roleArn;
     }
-    public void setRoleArn(final String roleArn)
-    {
-        this.roleArn = roleArn;
-    }
     public String getExternalId() { return this.externalId; }
     public String getSessionName()
     {
         return this.sessionName;
     }
-
     public int getDurationSeconds()
     {
-	return this.durationSeconds;
+        return this.durationSeconds;
     }
-    public void setDurationSeconds(int durationSeconds)
+
+    private void setExternalId(final String externalId) {
+        if (AWSProfile.externalIdPattern.matcher(externalId).matches())
+            this.externalId = externalId;
+        else
+            throw new IllegalArgumentException("AWSAssumeRole roleArn must match pattern "+AWSProfile.roleArnPattern.pattern());
+    }
+
+    private void setDurationSeconds(int durationSeconds)
     {
         if (durationSeconds < CREDENTIAL_LIFETIME_MIN) {
             durationSeconds = CREDENTIAL_LIFETIME_MIN;
@@ -56,6 +59,13 @@ public class AWSAssumeRole implements Cloneable
         this.durationSeconds = durationSeconds;
     }
 
+    private void setRoleArn(final String roleArn)
+    {
+        if (AWSProfile.roleArnPattern.matcher(roleArn).matches())
+            this.roleArn = roleArn;
+        else
+            throw new IllegalArgumentException("AWSAssumeRole roleArn must match pattern "+AWSProfile.roleArnPattern.pattern());
+    }
 
     protected AWSAssumeRole clone()
     {
@@ -67,10 +77,16 @@ public class AWSAssumeRole implements Cloneable
     }
 
     public static class Builder {
-        // TODO validate these values? see regex patterns in AWSProfile
         private AWSAssumeRole assumeRole;
         public Builder(final String roleArn, BurpExtender burp) {
             this.assumeRole = new AWSAssumeRole(roleArn, burp);
+        }
+        public Builder(final AWSAssumeRole assumeRole) {
+            this.assumeRole = assumeRole.clone();
+        }
+        public Builder withRoleArn(final String roleArn) {
+            this.assumeRole.setRoleArn(roleArn);
+            return this;
         }
         public Builder withRoleSessionName(final String sessionName) {
             this.assumeRole.sessionName = sessionName;
@@ -81,7 +97,7 @@ public class AWSAssumeRole implements Cloneable
             return this;
         }
         public Builder withExternalId(final String externalId) {
-            this.assumeRole.externalId = externalId;
+            this.assumeRole.setExternalId(externalId);
             return this;
         }
         public AWSAssumeRole build() {
@@ -89,9 +105,9 @@ public class AWSAssumeRole implements Cloneable
         }
     }
 
-    public AWSAssumeRole(final String roleArn, BurpExtender burp)
+    private AWSAssumeRole(final String roleArn, BurpExtender burp)
     {
-        this.roleArn = roleArn;
+        setRoleArn(roleArn);
         this.sessionName = ROLE_SESSION_NAME_DEFAULT;
         this.durationSeconds = CREDENTIAL_LIFETIME_MIN;
         this.externalId = null;
@@ -107,25 +123,34 @@ public class AWSAssumeRole implements Cloneable
         return credentials;
     }
 
+    /*
+    fetch new temporary credentials.
+     */
     private boolean renewCredentials(final AWSCredentials permanentCredentials)
     {
         burp.logger.info("Fetching temporary credentials for role "+this.roleArn);
+
         List<String> headers = new ArrayList<>();
         headers.add("POST / HTTP/1.1");
         headers.add("Accept: application/json");
         headers.add("Content-Type: application/x-www-form-urlencoded; charset=utf-8");
-        String bodyString = String.format("Action=AssumeRole&Version=2011-06-15&RoleArn=%s&RoleSessionName=%s&DurationSeconds=%d",
-                burp.helpers.urlEncode(this.roleArn), burp.helpers.urlEncode(this.sessionName), this.durationSeconds);
-        if (this.externalId != null && !this.externalId.equals("")) {
-            bodyString += String.format("&ExternalId=%s", burp.helpers.urlEncode(this.externalId));
-        }
-        byte[] body = burp.helpers.stringToBytes(bodyString);
 
+        List<String> parameters = new ArrayList<>();
+        parameters.add("Action=AssumeRole");
+        parameters.add("Version=2011-06-15");
+        parameters.add("RoleArn=" + burp.helpers.urlEncode(this.roleArn));
+        parameters.add("RoleSessionName=" + burp.helpers.urlEncode(this.sessionName));
+        parameters.add("DurationSeconds=" + this.durationSeconds);
+        if (this.externalId != null && !this.externalId.equals("")) {
+            parameters.add("ExternalId=" + burp.helpers.urlEncode(this.externalId));
+        }
+        byte[] body = burp.helpers.stringToBytes(String.join("&", parameters));
+
+        // build the SigV4 signed request
         AWSSignedRequest signedRequest = new AWSSignedRequest(
-                burp.helpers.buildHttpService(STS_HOST, 443, true),
+                burp.helpers.buildHttpService(AWS_STS_HOSTNAME, 443, true),
                 burp.helpers.buildHttpMessage(headers, body),
-                burp.helpers,
-                burp.logger);
+                burp);
         AWSProfile stsProfile = new AWSProfile.Builder(
                 "sts-temp",
                 permanentCredentials.getAccessKeyId(),
@@ -135,6 +160,7 @@ public class AWSAssumeRole implements Cloneable
         signedRequest.applyProfile(stsProfile);
         byte[] signedBytes = signedRequest.getSignedRequestBytes(permanentCredentials);
 
+        // create http client. get final headers for request.
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
@@ -142,13 +168,13 @@ public class AWSAssumeRole implements Cloneable
         headers = requestInfo.getHeaders();
         headers.remove(0); // POST / HTTP/1.1
 
+        // send the signed AssumeRole request
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                .uri(URI.create("https://"+STS_HOST+"/"));
+                .uri(URI.create("https://"+ AWS_STS_HOSTNAME +"/"));
         for (String header : headers) {
-            burp.logger.debug("Adding header: "+header);
             String[] value = header.split(": ", 2);
-            // remove restricted headers
+            // remove headers that the builder must set itself
             if (value[0].toLowerCase().equals("content-length")) {
                 continue;
             }
@@ -161,10 +187,11 @@ public class AWSAssumeRole implements Cloneable
         try {
             response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
         } catch (IOException | InterruptedException exc) {
-	    burp.logger.error(String.format("Failed to send request to %s: %s", STS_HOST, exc.toString()));
+            burp.logger.error(String.format("Failed to send AssumeRole request to %s: %s", AWS_STS_HOSTNAME, exc.toString()));
             return false;
         }
 
+        // process the response and get the temporary credentials
         String responseBody = response.body();
         burp.logger.debug(String.format("HTTP Response %d %s", response.statusCode(), responseBody));
         JsonObject sessionObj = Json.createReader(new StringReader(responseBody)).readObject();
@@ -187,13 +214,15 @@ public class AWSAssumeRole implements Cloneable
                 .add("roleArn", this.roleArn)
                 .add("roleSessionName", this.sessionName)
                 .add("durationSeconds", this.durationSeconds)
+                .add("externalId", this.externalId)
                 .build();
     }
 
     public static AWSAssumeRole fromJsonObject(final JsonObject obj, BurpExtender burp) {
         return new AWSAssumeRole.Builder(obj.getString("roleArn"), burp)
-                .withRoleSessionName(obj.getString("roleSessionName"))
-                .withDurationSeconds(obj.getInt("durationSeconds"))
+                .withRoleSessionName(obj.getString("roleSessionName", ROLE_SESSION_NAME_DEFAULT))
+                .withDurationSeconds(obj.getInt("durationSeconds", CREDENTIAL_LIFETIME_MIN))
+                .withExternalId(obj.getString("externalId", null))
                 .build();
     }
 }

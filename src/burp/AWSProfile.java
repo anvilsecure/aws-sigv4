@@ -19,11 +19,11 @@ to import credentials from environment vars or a credential file.
 */
 public class AWSProfile implements Cloneable
 {
-    public String name;
-    public String accessKeyId;
-    protected String secretKey;
-    public String region;
-    public String service;
+    private String name;
+    private String accessKeyId;
+    private String secretKey;
+    private String region;
+    private String service;
 
     private AWSAssumeRole assumeRole;
 
@@ -34,35 +34,53 @@ public class AWSProfile implements Cloneable
     public static final Pattern regionPattern = Pattern.compile("^[a-zA-Z]{1,4}-[a-zA-Z]{1,16}-[0-9]{1,2}$");
     public static final Pattern roleArnPattern = Pattern.compile("^arn:aws:iam::[0-9]{12}:role/[0-9a-zA-Z+=,.@_-]{1,64}$"); // regionless
     public static final Pattern roleSessionNamePattern = Pattern.compile("^[a-zA-Z0-9+=@,.-]{2,64}$");
+    public static final Pattern externalIdPattern = Pattern.compile("^[a-zA-Z0-9=@:/,._-]{2,64}$");
 
-
+    public String getName() { return this.name; }
+    public String getAccessKeyId() { return this.accessKeyId; }
     public AWSAssumeRole getAssumeRole()
     {
         return this.assumeRole;
     }
-    public void setName(final String name) { this.name = name; }
-    public void setAccessKeyId(final String accessKeyId) { this.accessKeyId = accessKeyId; }
-    public void setSecretKey(final String secretKey) { this.secretKey = secretKey; }
-    public void setRegion(final String region) { this.region = region; }
-    public void setService(final String service) { this.service = service; }
-    public void setAssumeRole(final AWSAssumeRole assumeRole) { this.assumeRole = assumeRole; }
+    public String getSecretKey() { return this.secretKey; }
+    public String getRegion() { return this.region; }
+    public String getService() { return this.service; }
+
+    private void setName(final String name) {
+        if (profileNamePattern.matcher(name).matches())
+            this.name = name;
+        else
+            throw new IllegalArgumentException("AWSProfile name must match pattern "+profileNamePattern.pattern());
+    }
+    private void setAccessKeyId(final String accessKeyId) {
+        if (accessKeyIdPattern.matcher(accessKeyId).matches())
+            this.accessKeyId = accessKeyId;
+        else
+            throw new IllegalArgumentException("AWSProfile accessKeyId must match pattern "+accessKeyIdPattern.pattern());
+    }
+    private void setSecretKey(final String secretKey) {
+        if (secretKeyPattern.matcher(secretKey).matches())
+            this.secretKey = secretKey;
+        else
+            throw new IllegalArgumentException("AWSProfile secretKey must match pattern "+secretKeyPattern.pattern());
+    }
+    private void setRegion(final String region) {
+        if (region.equals("") || regionPattern.matcher(region).matches())
+            this.region = region;
+        else
+            throw new IllegalArgumentException("AWSProfile region must match pattern " + regionPattern.pattern());
+    }
+
+    private void setService(final String service) { this.service = service; }
+    private void setAssumeRole(final AWSAssumeRole assumeRole) { this.assumeRole = assumeRole; }
 
     public static class Builder {
         AWSProfile profile;
         public Builder(final String name, final String accessKeyId, final String secretKey) {
             this.profile = new AWSProfile(name, accessKeyId, secretKey);
         }
-        public Builder withName(final String name) {
-            this.profile.setName(name);
-            return this;
-        }
-        public Builder withAccessKeyId(final String accessKeyId) {
-            this.profile.setAccessKeyId(accessKeyId);
-            return this;
-        }
-        public Builder withSecretKey(final String secretKey) {
-            this.profile.setSecretKey(secretKey);
-            return this;
+        public Builder(final AWSProfile profile) {
+            this.profile = profile.clone();
         }
         public Builder withRegion(final String region) {
             this.profile.setRegion(region);
@@ -89,13 +107,13 @@ public class AWSProfile implements Cloneable
                 .build();
     }
 
-    public AWSProfile(final String name, final String accessKeyId, final String secretKey)
+    private AWSProfile(final String name, final String accessKeyId, final String secretKey)
     {
         // NOTE: validation is intentionally omitted here. this allows users to specify
         // invalid values for testing purposes.
         this.name = name;
-        this.accessKeyId = accessKeyId;
-        this.secretKey = secretKey;
+        setAccessKeyId(accessKeyId);
+        setSecretKey(secretKey);
         this.region = "";
         this.service = "";
         this.assumeRole = null;
@@ -107,7 +125,7 @@ public class AWSProfile implements Cloneable
         if (envAccessKeyId != null) {
             final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
             if (envSecretKey != null) {
-                AWSProfile.Builder builder = new AWSProfile.Builder ("ENV", envAccessKeyId, envSecretKey);
+                AWSProfile.Builder builder = new AWSProfile.Builder("ENV", envAccessKeyId, envSecretKey);
                 if (System.getenv("AWS_DEFAULT_REGION") != null) {
                     builder.withRegion(System.getenv("AWS_DEFAULT_REGION"));
                 }
@@ -168,18 +186,25 @@ public class AWSProfile implements Cloneable
                 // TODO external_id, duration_seconds. add these in profile dialog, too?
                 final int durationSeconds = Integer.parseInt(profile.getOrDefault("duration_seconds", section.getOrDefault("duration_seconds", Integer.toString(AWSAssumeRole.CREDENTIAL_LIFETIME_MIN))));
                 final String externalId = profile.getOrDefault("external_id", section.getOrDefault("external_id", null));
-                profileList.add(new AWSProfile.Builder(name, section.get("aws_access_key_id"), section.get("aws_secret_access_key"))
-                        .withRegion(region)
-                        .withService("")
-                        .withAssumeRole(
-                                roleArnPattern.matcher(roleArn).matches() ? new AWSAssumeRole.Builder(roleArn, burp)
-                                        .withRoleSessionName(roleSessionName)
-                                        .withDurationSeconds(durationSeconds)
-                                        .withExternalId(externalId)
-                                        .build() : null
-                        )
-                        .build()
-                );
+
+                AWSAssumeRole assumeRole = null;
+                if (roleArnPattern.matcher(roleArn).matches()) {
+                    assumeRole = new AWSAssumeRole.Builder(roleArn, burp)
+                            .withRoleSessionName(roleSessionName)
+                            .withDurationSeconds(durationSeconds)
+                            .withExternalId(externalId)
+                            .build();
+                }
+                try {
+                    AWSProfile newProfile = new AWSProfile.Builder(name, section.get("aws_access_key_id"), section.get("aws_secret_access_key"))
+                            .withRegion(region)
+                            .withService("")
+                            .withAssumeRole(assumeRole)
+                            .build();
+                    profileList.add(newProfile);
+                } catch (IllegalArgumentException exc) {
+                    burp.logger.error(String.format("Failed to import profile [%s] from path %s: %s", name, path, exc.getMessage()));
+                }
             }
         }
         return profileList;

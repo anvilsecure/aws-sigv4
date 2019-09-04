@@ -46,7 +46,9 @@ source.
 
 ## Usage
 Hit the "Import" button to import credentials from a file. See https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-where
-for expected file format. You can also manually add credentials by clicking "Add".
+for expected file format. You can also manually add credentials by clicking "Add". In addition
+to the credentials file, awsig will also check if the profile exists in the config file and
+it will pull in parameters from there.
 
 At a minimum, a profile should contain a name, keyId, and secretKey. Outgoing requests
 will be signed with the profile associated with the keyId in the original request. If

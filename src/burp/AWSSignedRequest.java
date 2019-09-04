@@ -89,18 +89,18 @@ public class AWSSignedRequest
         parseAuthorizationHeader();
     }
 
-    public AWSSignedRequest(IHttpService httpService, byte[] requestBytes, IExtensionHelpers helpers, LogWriter logger)
+    public AWSSignedRequest(IHttpService httpService, byte[] requestBytes, BurpExtender burp)
     {
-        this.helpers = helpers;
-        this.logger = logger;
+        this.helpers = burp.helpers;
+        this.logger = burp.logger;
         this.httpService = httpService;
         init(requestBytes);
     }
 
-    public AWSSignedRequest(IHttpRequestResponse messageInfo, IExtensionHelpers helpers, LogWriter logger)
+    public AWSSignedRequest(IHttpRequestResponse messageInfo, BurpExtender burp)
     {
-        this.helpers = helpers;
-        this.logger = logger;
+        this.helpers = burp.helpers;
+        this.logger = burp.logger;
         this.httpService = messageInfo.getHttpService();
         init(messageInfo.getRequest());
     }
@@ -131,14 +131,14 @@ public class AWSSignedRequest
     */
     public void applyProfile(final AWSProfile profile)
     {
-        if (!profile.service.equals("")) {
-            this.setService(profile.service);
+        if (!profile.getService().equals("")) {
+            this.setService(profile.getService());
         }
-        if (!profile.region.equals("")) {
-            this.setRegion(profile.region);
+        if (!profile.getRegion().equals("")) {
+            this.setRegion(profile.getRegion());
         }
         // this is a NOP unless using a default profile
-        this.setAccessKeyId(profile.accessKeyId);
+        this.setAccessKeyId(profile.getAccessKeyId());
     }
 
     public AWSProfile getAnonymousProfile()
@@ -149,9 +149,9 @@ public class AWSSignedRequest
                 .build();
     }
 
-    public static AWSSignedRequest fromUnsignedRequest(final IHttpRequestResponse messageInfo, final AWSProfile profile, IExtensionHelpers helpers, LogWriter logger)
+    public static AWSSignedRequest fromUnsignedRequest(final IHttpRequestResponse messageInfo, final AWSProfile profile, BurpExtender burp)
     {
-        AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, helpers, logger);
+        AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, burp);
         signedRequest.applyProfile(profile);
         // XXX if we call init() here and the original request has a signature, the key in profile is overridden.
         // there was a reason for calling init() here but not sure if its still necessary
