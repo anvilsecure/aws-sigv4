@@ -8,6 +8,7 @@ public class LogWriter
     final public static int DEBUG_LEVEL = 0;
     final public static int INFO_LEVEL = 1;
     final public static int ERROR_LEVEL = 2;
+    final public static int DEFAULT_LEVEL = ERROR_LEVEL;
     final public static int FATAL_LEVEL = 3;
     final public static int NULL_LEVEL = 100;
 

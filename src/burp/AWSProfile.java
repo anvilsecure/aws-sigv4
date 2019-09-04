@@ -2,8 +2,8 @@ package burp;
 
 import javax.json.Json;
 import javax.json.JsonObject;
+import javax.json.JsonValue;
 import java.io.IOException;
-import java.io.Serializable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 Class represents a credential set for AWS services. Provides functionality
 to import credentials from environment vars or a credential file.
 */
-public class AWSProfile implements Serializable
+public class AWSProfile implements Cloneable
 {
     public String name;
     public String accessKeyId;
@@ -26,7 +26,6 @@ public class AWSProfile implements Serializable
     public String service;
 
     private AWSAssumeRole assumeRole;
-    private BurpExtender burp;
 
     // see https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
     public static final Pattern profileNamePattern = Pattern.compile("^[\\w+=,.@-]{1,64}$");
@@ -36,31 +35,70 @@ public class AWSProfile implements Serializable
     public static final Pattern roleArnPattern = Pattern.compile("^arn:aws:iam::[0-9]{12}:role/[0-9a-zA-Z+=,.@_-]{1,64}$"); // regionless
     public static final Pattern roleSessionNamePattern = Pattern.compile("^[a-zA-Z0-9+=@,.-]{2,64}$");
 
-    public AWSProfile(final AWSProfile profile)
+
+    public AWSAssumeRole getAssumeRole()
     {
-        this(profile.name, profile.accessKeyId, profile.secretKey, profile.region, profile.service);
-        if (profile.assumeRole != null) {
-            this.assumeRole = new AWSAssumeRole(this, profile.assumeRole.getRoleArn(), profile.assumeRole.getSessionName(), AWSAssumeRole.CREDENTIAL_LIFETIME_MIN, profile.burp);
+        return this.assumeRole;
+    }
+    public void setName(final String name) { this.name = name; }
+    public void setAccessKeyId(final String accessKeyId) { this.accessKeyId = accessKeyId; }
+    public void setSecretKey(final String secretKey) { this.secretKey = secretKey; }
+    public void setRegion(final String region) { this.region = region; }
+    public void setService(final String service) { this.service = service; }
+    public void setAssumeRole(final AWSAssumeRole assumeRole) { this.assumeRole = assumeRole; }
+
+    public static class Builder {
+        AWSProfile profile;
+        public Builder(final String name, final String accessKeyId, final String secretKey) {
+            this.profile = new AWSProfile(name, accessKeyId, secretKey);
+        }
+        public Builder withName(final String name) {
+            this.profile.setName(name);
+            return this;
+        }
+        public Builder withAccessKeyId(final String accessKeyId) {
+            this.profile.setAccessKeyId(accessKeyId);
+            return this;
+        }
+        public Builder withSecretKey(final String secretKey) {
+            this.profile.setSecretKey(secretKey);
+            return this;
+        }
+        public Builder withRegion(final String region) {
+            this.profile.setRegion(region);
+            return this;
+        }
+        public Builder withService(final String service) {
+            this.profile.setService(service);
+            return this;
+        }
+        public Builder withAssumeRole(final AWSAssumeRole assumeRole) {
+            this.profile.setAssumeRole(assumeRole);
+            return this;
+        }
+        public AWSProfile build() {
+            return this.profile;
         }
     }
 
-    public AWSProfile(String name, String accessKeyId, String secretKey, String region, String service)
+    public AWSProfile clone() {
+        return new AWSProfile.Builder(this.name, this.accessKeyId, this.secretKey)
+                .withRegion(this.region)
+                .withService(this.service)
+                .withAssumeRole(this.assumeRole != null ? this.assumeRole.clone() : null)
+                .build();
+    }
+
+    public AWSProfile(final String name, final String accessKeyId, final String secretKey)
     {
         // NOTE: validation is intentionally omitted here. this allows users to specify
         // invalid values for testing purposes.
         this.name = name;
         this.accessKeyId = accessKeyId;
         this.secretKey = secretKey;
-        this.region = region;
-        this.service = service;
-    }
-
-    public AWSProfile(String name, String accessKeyId, String secretKey, String region, String service, String roleArn, String roleSessionName, BurpExtender burp)
-    {
-        this(name, accessKeyId, secretKey, region, service);
-        if (roleArn != null && !roleArn.equals("")) {
-            this.assumeRole = new AWSAssumeRole(this, roleArn, roleSessionName, AWSAssumeRole.CREDENTIAL_LIFETIME_MIN, burp);
-        }
+        this.region = "";
+        this.service = "";
+        this.assumeRole = null;
     }
 
     public static AWSProfile fromEnvironment()
@@ -69,7 +107,11 @@ public class AWSProfile implements Serializable
         if (envAccessKeyId != null) {
             final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
             if (envSecretKey != null) {
-                return new AWSProfile("ENV", envAccessKeyId, envSecretKey, "", "");
+                AWSProfile.Builder builder = new AWSProfile.Builder ("ENV", envAccessKeyId, envSecretKey);
+                if (System.getenv("AWS_DEFAULT_REGION") != null) {
+                    builder.withRegion(System.getenv("AWS_DEFAULT_REGION"));
+                }
+                return builder.build();
             }
         }
         return null;
@@ -83,29 +125,19 @@ public class AWSProfile implements Serializable
                 .add("secretKey", secretKey)
                 .add("region", region)
                 .add("service", service)
-                .add("roleArn", assumeRole == null ? "" : assumeRole.getRoleArn())
-                .add("roleSessionName", assumeRole == null ? "" : assumeRole.getSessionName())
-                .add("durationSeconds", assumeRole == null ? 0 : assumeRole.getDurationSeconds())
+                .add("assumeRoleObject", assumeRole != null ? assumeRole.toJsonObject() : JsonValue.NULL)
                 .build();
     }
 
     public static AWSProfile fromJsonObject(final JsonObject obj, BurpExtender burp)
     {
-	// TODO durationSeconds
-        return new AWSProfile(
-                obj.getString("name"),
-                obj.getString("accessKeyId"),
-                obj.getString("secretKey"),
-                obj.getString("region"),
-                obj.getString("service"),
-                obj.getString("roleArn"),
-                obj.getString("roleSessionName"),
-                burp);
-    }
-
-    public AWSAssumeRole getAssumeRole()
-    {
-        return this.assumeRole;
+        return new AWSProfile.Builder(obj.getString("name"), obj.getString("accessKeyId"), obj.getString("secretKey"))
+                .withRegion(obj.getString("region"))
+                .withService(obj.getString("service"))
+                .withAssumeRole(
+                        obj.get("assumeRoleObject").equals(JsonValue.NULL) ? null :
+                        AWSAssumeRole.fromJsonObject(obj.getJsonObject("assumeRoleObject"), burp))
+                .build();
     }
 
     public static ArrayList<AWSProfile> fromCredentialPath(final Path path, BurpExtender burp)
@@ -129,35 +161,25 @@ public class AWSProfile implements Serializable
         for (final String name : credentials.keySet()) {
             HashMap<String, String> section = credentials.get(name);
             if (section.containsKey("aws_access_key_id") && section.containsKey("aws_secret_access_key")) {
-                HashMap<String, String> profile = config.get("profile " + name);
-                if (profile == null) {
-                    profile = new HashMap<>();
-                }
-                String region = section.get("region");
-                String roleArn = section.get("role_arn");
-                String roleSessionName = section.get("role_session_name");
+                HashMap<String, String> profile = config.getOrDefault("profile " + name, new HashMap<>());
+                final String region = profile.getOrDefault("region", section.getOrDefault("region", ""));
+                final String roleArn = profile.getOrDefault("role_arn", section.getOrDefault("role_arn", ""));
+                final String roleSessionName = profile.getOrDefault("role_session_name", section.getOrDefault("role_session_name", AWSAssumeRole.ROLE_SESSION_NAME_DEFAULT));
                 // TODO external_id, duration_seconds. add these in profile dialog, too?
-                //String durationSeconds = section.get("duration_seconds");
-                if (profile != null) {
-                    if (region == null) {
-                        region = profile.get("region");
-                    }
-                    if (roleArn == null) {
-                        roleArn = profile.get("role_arn");
-                    }
-                    if (roleSessionName == null) {
-                        roleSessionName = profile.get("role_session_name");
-                    }
-                }
-                profileList.add(new AWSProfile(
-                        name,
-                        section.get("aws_access_key_id"),
-                        section.get("aws_secret_access_key"),
-                        region == null ? "" : region,
-                        "", // service
-                        roleArn,
-                        roleSessionName == null ? AWSAssumeRole.ROLE_SESSION_NAME_DEFAULT : roleSessionName,
-                        burp));
+                final int durationSeconds = Integer.parseInt(profile.getOrDefault("duration_seconds", section.getOrDefault("duration_seconds", Integer.toString(AWSAssumeRole.CREDENTIAL_LIFETIME_MIN))));
+                final String externalId = profile.getOrDefault("external_id", section.getOrDefault("external_id", null));
+                profileList.add(new AWSProfile.Builder(name, section.get("aws_access_key_id"), section.get("aws_secret_access_key"))
+                        .withRegion(region)
+                        .withService("")
+                        .withAssumeRole(
+                                roleArnPattern.matcher(roleArn).matches() ? new AWSAssumeRole.Builder(roleArn, burp)
+                                        .withRoleSessionName(roleSessionName)
+                                        .withDurationSeconds(durationSeconds)
+                                        .withExternalId(externalId)
+                                        .build() : null
+                        )
+                        .build()
+                );
             }
         }
         return profileList;
@@ -187,19 +209,25 @@ public class AWSProfile implements Serializable
             }
             if (this.assumeRole != null) {
                 final String roleArn = this.assumeRole.getRoleArn();
-                final String sessionName = this.assumeRole.getSessionName();
-                int durationSeconds = this.assumeRole.getDurationSeconds();
                 if (roleArn != null && roleArnPattern.matcher(roleArn).matches()) {
                     export += String.format("role_arn = %s\n", roleArn);
+
+                    final String sessionName = this.assumeRole.getSessionName();
                     if (sessionName != null && roleSessionNamePattern.matcher(sessionName).matches()) {
                         export += String.format("role_session_name = %s\n", sessionName);
                     }
+
                     // duration must be in range [900, 43200]
+                    int durationSeconds = this.assumeRole.getDurationSeconds();
                     if (durationSeconds < 900)
                         durationSeconds = 900;
                     if (durationSeconds > 43200)
                         durationSeconds = 43200;
                     export += String.format("duration_seconds = %d\n", durationSeconds);
+                    final String externalId = this.assumeRole.getExternalId();
+                    if (externalId != null && !externalId.equals("")) {
+                        export += String.format("external_id = %s\n", externalId);
+                    }
                 }
             }
         }
@@ -234,7 +262,7 @@ public class AWSProfile implements Serializable
     public AWSCredentials getCredentials()
     {
         if (assumeRole != null) {
-            return assumeRole.getCredentials();
+            return assumeRole.getTemporaryCredentials(getPermanentCredentials());
         }
         return getPermanentCredentials();
     }

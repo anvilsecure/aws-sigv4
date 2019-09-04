@@ -94,8 +94,24 @@ public class AWSProfileEditorDialog extends JDialog
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                if (burp.updateProfile(profile, new AWSProfile(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText(),
-                                                               regionTextField.getText(), serviceTextField.getText(), assumeRoleTextField.getText(), AWSAssumeRole.ROLE_SESSION_NAME_DEFAULT,  burp))) {
+                AWSAssumeRole assumeRole = null;
+                if (profile != null) {
+                    // edit dialog
+                    if (profile.getAssumeRole() != null) {
+                        assumeRole = profile.getAssumeRole().clone();
+                        assumeRole.setRoleArn(assumeRoleTextField.getText());
+                    }
+                    else {
+                        // no previous role arn
+                        assumeRole = new AWSAssumeRole(assumeRoleTextField.getText(), burp);
+                    }
+                }
+                AWSProfile newProfile = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
+                        .withRegion(regionTextField.getText())
+                        .withService(serviceTextField.getText())
+                        .withAssumeRole(assumeRole)
+                        .build();
+                if (burp.updateProfile(profile, newProfile)) {
                     setVisible(false);
                     dispose();
                 }

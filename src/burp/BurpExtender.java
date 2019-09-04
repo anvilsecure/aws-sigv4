@@ -400,13 +400,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
-        callbacks.setExtensionName("AWSig");
+        callbacks.setExtensionName("SigV4");
         callbacks.registerExtensionStateListener(this);
 
-        this.logger = new LogWriter(callbacks.getStdout(), callbacks.getStderr(), LogWriter.ERROR_LEVEL);
-        String setting = this.callbacks.loadExtensionSetting(SETTING_LOG_LEVEL);
+        this.logger = new LogWriter(callbacks.getStdout(), callbacks.getStderr(), LogWriter.DEFAULT_LEVEL);
+        final String setting = this.callbacks.loadExtensionSetting(SETTING_LOG_LEVEL);
         if (setting != null) {
-            logger.setLevel(Integer.parseInt(setting));
+            this.logger.setLevel(Integer.parseInt(setting));
         }
 
         this.profileKeyIdMap = new HashMap<>();
@@ -432,6 +432,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private void saveExtensionSettings()
     {
+        this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(this.logger.getLevel()));
+
         JsonArrayBuilder jsonArrayBuilder = Json.createArrayBuilder();
         if (this.persistProfilesCheckBox.isSelected()) {
             for (final String name : this.profileNameMap.keySet()) {
@@ -446,7 +448,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .add(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected())
                 .add(SETTING_EXTENSION_ENABLED, this.signingEnabledCheckBox.isSelected())
                 .add(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName())
-                .add(SETTING_LOG_LEVEL, logger.getLevel())
                 .add(SETTING_CUSTOM_HEADERS, Json.createArrayBuilder(getCustomHeadersFromUI()).build())
                 .add(SETTING_CUSTOM_HEADERS_OVERWRITE, this.customHeadersOverwriteCheckbox.isSelected())
                 .add(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, String.join(",", getAdditionalSignedHeadersFromUI()))
@@ -645,7 +646,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 } // else... XXX maybe display an error dialog here
                                 return;
                             }
-                            AWSProfile editedProfile = new AWSProfile(savedProfile); // get profile as saved by the accessKey
+                            AWSProfile editedProfile = savedProfile.clone(); // get profile as saved by the accessKey
                             // some values may differ from what are saved for the profile, so set them here.
                             editedProfile.region = sigProfile.region;
                             editedProfile.service = sigProfile.service;
