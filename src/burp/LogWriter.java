@@ -52,7 +52,7 @@ public class LogWriter
     private void log(final String message, int level)
     {
         if (this.logLevel <= level) {
-            if (this.logLevel >= ERROR_LEVEL) {
+            if (level >= ERROR_LEVEL) {
                 this.err.println(message);
             }
             else {
