@@ -75,7 +75,7 @@ public class AWSProfile implements Cloneable
     private void setAssumeRole(final AWSAssumeRole assumeRole) { this.assumeRole = assumeRole; }
 
     public static class Builder {
-        AWSProfile profile;
+        private AWSProfile profile;
         public Builder(final String name, final String accessKeyId, final String secretKey) {
             this.profile = new AWSProfile(name, accessKeyId, secretKey);
         }

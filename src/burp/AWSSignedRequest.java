@@ -652,7 +652,7 @@ public class AWSSignedRequest
         updateAmzDate();
         // sign just the host header since we can't control which headers are sent when this
         // url is pasted into the browser.
-        HashSet<String> headerSet = new HashSet<>(this.signedHeaderSet);
+        Set<String> headerSet = this.signedHeaderSet;
         this.signedHeaderSet = new HashSet<>(Arrays.asList("host"));
         String url = "";
         if (updateQueryString(credentials, expires)) {
