@@ -580,6 +580,7 @@ public class AWSSignedRequest
 
     private String getSignature(final String secretKey)
     {
+        logger.debug("Signing message with accessKeyId "+this.accessKeyId);
         final String toSign = String.join("\n",
                 this.algorithm.toUpperCase(),
                 this.amzDate,

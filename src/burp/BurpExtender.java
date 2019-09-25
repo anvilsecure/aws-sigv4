@@ -17,6 +17,9 @@ import java.util.*;
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
+    private static final String AWSIG_VERSION = "1.2.0";
+    private static final String SETTING_VERSION = "AwsigVersion";
+
     private static final String SETTING_PROFILES = "SerializedProfileList";
     private static final String SETTING_PERSISTENT_PROFILES = "PersistentProfiles";
     private static final String SETTING_EXTENSION_ENABLED = "ExtensionEnabled";
@@ -400,6 +403,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
+
         callbacks.setExtensionName("SigV4");
         callbacks.registerExtensionStateListener(this);
 
@@ -418,14 +422,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             public void run()
             {
                 buildUiTab();
+                loadExtensionSettings();
                 callbacks.addSuiteTab(BurpExtender.this);
                 callbacks.registerHttpListener(BurpExtender.this);
                 callbacks.registerContextMenuFactory(BurpExtender.this);
                 callbacks.registerMessageEditorTabFactory(BurpExtender.this);
-
-                loadExtensionSettings();
-
-                logger.info("Loaded AWSig");
+                logger.info("Loaded AWSig "+AWSIG_VERSION);
             }
         });
     }
@@ -433,6 +435,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private void saveExtensionSettings()
     {
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(this.logger.getLevel()));
+        this.callbacks.saveExtensionSetting(SETTING_VERSION, AWSIG_VERSION);
 
         JsonArrayBuilder jsonArrayBuilder = Json.createArrayBuilder();
         if (this.persistProfilesCheckBox.isSelected()) {
@@ -458,6 +461,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private void loadExtensionSettings()
     {
+        // plugin version that added the settings. in the future use this to migrate settings.
+        final String pluginVersion = this.callbacks.loadExtensionSetting(SETTING_VERSION);
+        if (pluginVersion != null)
+            logger.info("Found settings for version "+pluginVersion);
+        else
+            logger.info("Found settings for version < 1.2.0");
+
         final String jsonSettingsString = this.callbacks.loadExtensionSetting("JsonSettings");
         if (jsonSettingsString == null || jsonSettingsString.equals("")) {
             logger.info("No plugin settings found");

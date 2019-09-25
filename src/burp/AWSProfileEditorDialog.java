@@ -52,6 +52,7 @@ public class AWSProfileEditorDialog extends JDialog
         JPanel outerPanel = new JPanel(new GridBagLayout());
         outerPanel.setBorder(new TitledBorder(""));
 
+        // TODO externalId, durationSeconds, roleSessionName. add these, too?
         outerPanel.add(new JLabel("Name"), newConstraint(0, 0, GridBagConstraints.FIRST_LINE_START));
         this.nameTextField = new JTextField("", 40);
         outerPanel.add(nameTextField, newConstraint(1, 0));
@@ -88,6 +89,7 @@ public class AWSProfileEditorDialog extends JDialog
             public void actionPerformed(ActionEvent actionEvent)
             {
                 setVisible(false);
+                dispose();
             }
         });
         okButton.addActionListener(new ActionListener()
