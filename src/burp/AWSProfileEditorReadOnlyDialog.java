@@ -29,22 +29,28 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
             {
                 AWSAssumeRole assumeRole = null;
                 try {
-                    if (profile != null && !assumeRoleTextField.getText().equals("")) {
+                    if (profile != null && !roleArnTextField.getText().equals("")) {
                         // edit dialog
                         if (profile.getAssumeRole() != null) {
                             assumeRole = new AWSAssumeRole.Builder(profile.getAssumeRole())
-                                    .withRoleArn(assumeRoleTextField.getText())
+                                    .withRoleArn(roleArnTextField.getText())
+                                    .tryExternalId(externalIdTextField.getText())
+                                    .tryRoleSessionName(sessionNameTextField.getText())
                                     .build();
                         }
                         else {
                             // no previous role arn
-                            assumeRole = new AWSAssumeRole.Builder(assumeRoleTextField.getText(), burp).build();
+                            assumeRole = new AWSAssumeRole.Builder(roleArnTextField.getText(), burp)
+                                    .tryExternalId(externalIdTextField.getText())
+                                    .tryRoleSessionName(sessionNameTextField.getText())
+                                    .build();
                         }
                     }
 
                     editedProfile = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
                             .withRegion(regionTextField.getText())
                             .withService(serviceTextField.getText())
+                            .withAssumeRoleEnabled(assumeRoleCheckbox.isSelected())
                             .withAssumeRole(assumeRole)
                             .build();
                     setVisible(false);
@@ -78,8 +84,10 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
         disableField(this.secretKeyTextField);
     }
 
-    public void disableAssumeRoleArn()
+    public void disableAssumeRole()
     {
-        disableField(this.assumeRoleTextField);
+        disableField(this.roleArnTextField);
+        disableField(this.externalIdTextField);
+        disableField(this.sessionNameTextField);
     }
 }

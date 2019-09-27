@@ -39,7 +39,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     protected LogWriter logger;
 
     private JLabel statusLabel;
-    private JCheckBox signingEnabledCheckBox;
+    protected JCheckBox signingEnabledCheckBox;
     private JComboBox defaultProfileComboBox;
     private JComboBox logLevelComboBox;
     private JCheckBox persistProfilesCheckBox;
@@ -621,7 +621,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                     dialog.disableName();
                                     dialog.disableKeyId();
                                     dialog.disableSecret();
-                                    dialog.disableAssumeRoleArn();
+                                    dialog.disableAssumeRole();
                                     // set focus to first missing field
                                     if (signedRequest.getRegion().equals("")) {
                                         dialog.regionTextField.requestFocus();
@@ -678,7 +678,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             dialog.disableName();
                             dialog.disableKeyId();
                             dialog.disableSecret();
-                            dialog.disableAssumeRoleArn();
+                            dialog.disableAssumeRole();
                             dialog.setVisible(true);
                             if (dialog.getProfile() != null) {
                                 // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.
@@ -949,10 +949,18 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     return;
                 }
 
-                byte[] requestBytes = signedRequest.getSignedRequestBytes(profile.getCredentials());
-                if (requestBytes != null) {
-                    logger.info("Signed request with profile: " + profile);
-                    messageInfo.setRequest(requestBytes);
+                AWSCredentials credentials = profile.getCredentials();
+                if (credentials == null) {
+                    // assume role failure
+                    logger.error("Failed to get credentials for profile: "+profile.getName());
+                    return;
+                }
+                else {
+                    byte[] requestBytes = signedRequest.getSignedRequestBytes(credentials);
+                    if (requestBytes != null) {
+                        logger.info("Signed request with profile: " + profile);
+                        messageInfo.setRequest(requestBytes);
+                    }
                 }
             }
         }

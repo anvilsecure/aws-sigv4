@@ -49,21 +49,26 @@ public class AWSMessageEditorTab implements IMessageEditorTab
 
     @Override
     public void setMessage(byte[] content, boolean isRequest) {
-        this.content = content;
+        if (this.burp.signingEnabledCheckBox.isSelected()) {
+            this.content = content;
 
-        try {
-            AWSSignedRequest signedRequest = new AWSSignedRequest(this.controller.getHttpService(), this.content, this.burp);
-            final AWSProfile profile = this.burp.customizeSignedRequest(signedRequest);
-            if (profile == null) {
-                this.messageTextEditor.setText(this.helpers.stringToBytes(
-                        "No profile found for keyId: "+signedRequest.getAccessKeyId()+". Either add it or set a default profile."));
+            try {
+                AWSSignedRequest signedRequest = new AWSSignedRequest(this.controller.getHttpService(), this.content, this.burp);
+                final AWSProfile profile = this.burp.customizeSignedRequest(signedRequest);
+                if (profile == null) {
+                    this.messageTextEditor.setText(this.helpers.stringToBytes(
+                            "No profile found for keyId: " + signedRequest.getAccessKeyId() + ". Either add it or set a default profile."));
+                    return;
+                }
+                this.messageTextEditor.setText(signedRequest.getSignedRequestBytes(profile.getCredentials()));
                 return;
+            } catch (Exception exc) {
             }
-            this.messageTextEditor.setText(signedRequest.getSignedRequestBytes(profile.getCredentials()));
-            return;
-        } catch (Exception exc) {
+            this.messageTextEditor.setText(this.helpers.stringToBytes("Failed to sign message with SigV4"));
         }
-        this.messageTextEditor.setText(this.helpers.stringToBytes("Failed to sign message with SigV4"));
+        else {
+            this.messageTextEditor.setText(this.helpers.stringToBytes("SigV4 signing is disabled"));
+        }
     }
 
     @Override

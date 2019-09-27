@@ -67,6 +67,7 @@ public class AWSSignedRequest
         // requests require either one of these date headers.
         this.signedHeaderSet.add("x-amz-date");
         this.signedHeaderSet.add("date");
+        this.signedHeaderSet.add("x-amz-security-token"); // for temporary creds
 
         // make sure host header is present
         boolean hasHostHeader = false;

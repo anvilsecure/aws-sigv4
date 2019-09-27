@@ -26,12 +26,14 @@ public class AWSProfile implements Cloneable
     private String service;
 
     private AWSAssumeRole assumeRole;
+    private boolean assumeRoleEnabled;
 
     // see https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
     public static final Pattern profileNamePattern = Pattern.compile("^[\\w+=,.@-]{1,64}$");
     public static final Pattern accessKeyIdPattern = Pattern.compile("^[\\w]{16,128}$");
     public static final Pattern secretKeyPattern = Pattern.compile("^[a-zA-Z0-9/+]{40,128}$"); // base64 characters. not sure on length
     public static final Pattern regionPattern = Pattern.compile("^[a-zA-Z]{1,4}-[a-zA-Z]{1,16}-[0-9]{1,2}$");
+    public static final Pattern servicePattern = Pattern.compile("^[\\w_-]{1,64}$");
     public static final Pattern roleArnPattern = Pattern.compile("^arn:aws:iam::[0-9]{12}:role/[0-9a-zA-Z+=,.@_-]{1,64}$"); // regionless
     public static final Pattern roleSessionNamePattern = Pattern.compile("^[a-zA-Z0-9+=@,._-]{2,64}$");
     public static final Pattern externalIdPattern = Pattern.compile("^[a-zA-Z0-9=@:/,._-]{2,1024}$");
@@ -41,6 +43,10 @@ public class AWSProfile implements Cloneable
     public AWSAssumeRole getAssumeRole()
     {
         return this.assumeRole;
+    }
+    public boolean getAssumeRoleEnabled()
+    {
+        return this.assumeRoleEnabled;
     }
     public String getSecretKey() { return this.secretKey; }
     public String getRegion() { return this.region; }
@@ -71,7 +77,12 @@ public class AWSProfile implements Cloneable
             throw new IllegalArgumentException("AWSProfile region must match pattern " + regionPattern.pattern());
     }
 
-    private void setService(final String service) { this.service = service; }
+    private void setService(final String service) {
+        if (service.equals("") || servicePattern.matcher(service).matches())
+            this.service = service;
+        else
+            throw new IllegalArgumentException("AWSProfile service must match pattern " + servicePattern.pattern());
+    }
     private void setAssumeRole(final AWSAssumeRole assumeRole) { this.assumeRole = assumeRole; }
 
     public static class Builder {
@@ -88,6 +99,10 @@ public class AWSProfile implements Cloneable
         }
         public Builder withService(final String service) {
             this.profile.setService(service);
+            return this;
+        }
+        public Builder withAssumeRoleEnabled(final boolean enabled) {
+            this.profile.assumeRoleEnabled = enabled;
             return this;
         }
         public Builder withAssumeRole(final AWSAssumeRole assumeRole) {
@@ -116,6 +131,7 @@ public class AWSProfile implements Cloneable
         setSecretKey(secretKey);
         this.region = "";
         this.service = "";
+        this.assumeRoleEnabled = false;
         this.assumeRole = null;
     }
 
@@ -143,6 +159,7 @@ public class AWSProfile implements Cloneable
                 .add("secretKey", secretKey)
                 .add("region", region)
                 .add("service", service)
+                .add("assumeRoleEnabled", assumeRoleEnabled)
                 .add("assumeRoleObject", assumeRole != null ? assumeRole.toJsonObject() : JsonValue.NULL)
                 .build();
     }
@@ -152,6 +169,7 @@ public class AWSProfile implements Cloneable
         return new AWSProfile.Builder(obj.getString("name"), obj.getString("accessKeyId"), obj.getString("secretKey"))
                 .withRegion(obj.getString("region"))
                 .withService(obj.getString("service"))
+                .withAssumeRoleEnabled(obj.getBoolean("assumeRoleEnabled", false))
                 .withAssumeRole(
                         obj.get("assumeRoleObject").equals(JsonValue.NULL) ? null :
                         AWSAssumeRole.fromJsonObject(obj.getJsonObject("assumeRoleObject"), burp))
@@ -278,7 +296,7 @@ public class AWSProfile implements Cloneable
 
     public AWSCredentials getCredentials()
     {
-        if (assumeRole != null) {
+        if (assumeRole != null && assumeRoleEnabled) {
             return assumeRole.getTemporaryCredentials(getPermanentCredentials());
         }
         return getPermanentCredentials();

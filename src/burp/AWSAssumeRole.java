@@ -47,7 +47,7 @@ public class AWSAssumeRole implements Cloneable
         if (AWSProfile.externalIdPattern.matcher(externalId).matches())
             this.externalId = externalId;
         else
-            throw new IllegalArgumentException("AWSAssumeRole roleArn must match pattern "+AWSProfile.roleArnPattern.pattern());
+            throw new IllegalArgumentException("AWSAssumeRole externalId must match pattern "+AWSProfile.externalIdPattern.pattern());
     }
 
     private void setDurationSeconds(int durationSeconds)
@@ -105,8 +105,10 @@ public class AWSAssumeRole implements Cloneable
             return this;
         }
         public Builder tryRoleSessionName(final String sessionName) {
-            if (sessionName != null)
+            if (sessionName != null && !sessionName.equals(""))
                 withRoleSessionName(sessionName);
+            else
+                this.assumeRole.sessionName = createDefaultRoleSessionName();
             return this;
         }
         public Builder withDurationSeconds(final int durationSeconds) {
@@ -118,8 +120,10 @@ public class AWSAssumeRole implements Cloneable
             return this;
         }
         public Builder tryExternalId(final String externalId) {
-            if (externalId != null)
+            if (externalId != null && !externalId.equals(""))
                 withExternalId(externalId);
+            else
+                this.assumeRole.externalId = null;
             return this;
         }
         public AWSAssumeRole build() {
@@ -156,6 +160,7 @@ public class AWSAssumeRole implements Cloneable
     private boolean renewCredentials(final AWSCredentials permanentCredentials)
     {
         burp.logger.info("Fetching temporary credentials for role "+this.roleArn);
+        this.credentials = null;
 
         List<String> headers = new ArrayList<>();
         headers.add("POST / HTTP/1.1");
