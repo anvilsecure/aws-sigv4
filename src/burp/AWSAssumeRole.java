@@ -3,6 +3,8 @@ package burp;
 import javax.json.Json;
 import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
+import javax.management.RuntimeErrorException;
+import javax.swing.*;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.URI;
@@ -150,6 +152,10 @@ public class AWSAssumeRole implements Cloneable
         if ((this.credentials == null) || (this.credentials.secondsToExpire() < CREDENTIAL_RENEWAL_AGE)) {
             // signature is expired or about to expire. get new credentials
             renewCredentials(permanentCredentials);
+        }
+        if (this.credentials == null) {
+            JOptionPane.showMessageDialog(this.burp.getUiComponent(), String.format("Failed to retrieve temp credentials for: "+this.roleArn));
+            throw new RuntimeException("Failed to retrieve temp credentials for: "+this.roleArn);
         }
         return credentials;
     }

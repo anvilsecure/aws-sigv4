@@ -89,5 +89,7 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
         disableField(this.roleArnTextField);
         disableField(this.externalIdTextField);
         disableField(this.sessionNameTextField);
+        this.assumeRoleCheckbox.setEnabled(false);
+        this.assumeRoleCheckbox.setForeground(disabledColor);
     }
 }

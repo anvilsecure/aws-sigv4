@@ -657,6 +657,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 // if existing profile doesn't exist with this key id, create one and apply it
                                 AWSProfileEditorDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null, BurpExtender.this);
                                 dialog.applyProfile(sigProfile); // auto fill fields gathered from original request
+                                dialog.nameTextField.setText(""); // overwrite garbage value used to pass validation
+                                dialog.secretKeyTextField.setText(""); // overwrite garbage value used to pass validation
                                 callbacks.customizeUiComponent(dialog);
                                 dialog.setVisible(true);
                                 final AWSProfile newProfile = customizeSignedRequest(signedRequest);

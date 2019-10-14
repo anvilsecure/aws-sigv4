@@ -144,7 +144,7 @@ public class AWSSignedRequest
 
     public AWSProfile getAnonymousProfile()
     {
-        return new AWSProfile.Builder("", this.accessKeyId, "")
+        return new AWSProfile.Builder("AnonymousProfile", this.accessKeyId, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
                 .withRegion(this.region)
                 .withService(this.service)
                 .build();

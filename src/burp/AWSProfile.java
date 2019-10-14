@@ -126,7 +126,7 @@ public class AWSProfile implements Cloneable
     {
         // NOTE: validation is intentionally omitted here. this allows users to specify
         // invalid values for testing purposes.
-        this.name = name;
+        setName(name);
         setAccessKeyId(accessKeyId);
         setSecretKey(secretKey);
         this.region = "";
