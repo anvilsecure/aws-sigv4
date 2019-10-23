@@ -30,6 +30,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String SETTING_ADDITIONAL_SIGNED_HEADER_NAMES = "AdditionalSignedHeaderNames";
     private static final String SETTING_IN_SCOPE_ONLY = "InScopeOnly";
 
+    private static final String AWS_IAM_HOSTNAME = "iam.amazonaws.com";
+    private static final String AWS_IAM_REGION = "us-east-1";
+    private static final String AWS_IAM_SIGNAME = "iam";
+
     private static final String NO_DEFAULT_PROFILE = "";
 
     protected IExtensionHelpers helpers;
@@ -117,14 +121,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JButton addProfileButton = new JButton("Add");
         JButton editProfileButton = new JButton("Edit");
         JButton removeProfileButton = new JButton("Remove");
-        JButton makeDefaultButton = new JButton("Default");
+        JButton testProfileButton = new JButton("Test");
         JButton importProfileButton = new JButton("Import");
         JButton exportProfileButton = new JButton("Export");
-        JPanel profileButtonPanel = new JPanel(new GridLayout(6, 1));
+        JPanel profileButtonPanel = new JPanel(new GridLayout(7, 1));
         profileButtonPanel.add(addProfileButton);
         profileButtonPanel.add(editProfileButton);
         profileButtonPanel.add(removeProfileButton);
-        profileButtonPanel.add(makeDefaultButton);
+        profileButtonPanel.add(testProfileButton);
         profileButtonPanel.add(importProfileButton);
         profileButtonPanel.add(exportProfileButton);
 
@@ -282,19 +286,44 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 }
             }
         });
-        makeDefaultButton.addActionListener(new ActionListener()
+        testProfileButton.addActionListener(new ActionListener()
         {
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
+                // build a signed request to IAM GetUser API to test the credentials and send it to repeater
+                // Notes
+                //   * this request will be subject to any modifications specified in the plugin
+                //   * if profile has a region set, it will override the region set here
+                //     - temp fix is to check "In-scope Only" and ensure AWS_IAM_HOSTNAME is not in scope
+                //   * this currently won't change the default profile if it's set which could be confusing
                 int[] rowIndeces = profileTable.getSelectedRows();
                 DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                 if (rowIndeces.length == 1) {
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
-                    setDefaultProfileName(name);
+                    AWSProfile profile = profileNameMap.get(name);
+                    // build the request
+                    final byte[] body = helpers.stringToBytes("Version=2010-05-08&Action=GetUser");
+                    List<String> headers = new ArrayList<>();
+                    headers.add("POST / HTTP/1.1");
+                    headers.add("Host: "+AWS_IAM_HOSTNAME);
+                    headers.add("Content-Type: application/x-www-form-urlencoded; charset=utf-8");
+                    IHttpService httpService = helpers.buildHttpService(AWS_IAM_HOSTNAME, 443, true);
+                    AWSSignedRequest signedRequest = new AWSSignedRequest(
+                            httpService,
+                            helpers.buildHttpMessage(headers, body),
+                            BurpExtender.this);
+                    signedRequest.applyProfile(profile);
+                    signedRequest.setRegion(AWS_IAM_REGION);
+                    signedRequest.setService(AWS_IAM_SIGNAME);
+                    callbacks.sendToRepeater(httpService.getHost(),
+                            httpService.getPort(),
+                            true /* useHttps */,
+                            signedRequest.getSignedRequestBytes(profile.getCredentials()),
+                            profile.getName());
                 }
                 else {
-                    updateStatus("Select a single profile to make it default");
+                    updateStatus("Select a single profile to test");
                 }
             }
         });

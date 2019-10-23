@@ -26,6 +26,7 @@ public class AWSAssumeRole implements Cloneable
 
     private static final String AWS_STS_HOSTNAME = "sts.amazonaws.com";
     private static final String AWS_STS_REGION = "us-east-1";
+    private static final String AWS_STS_SIGNAME = "sts";
     private static int CREDENTIAL_RENEWAL_AGE = 60; // seconds before expiration
     public static final int CREDENTIAL_LIFETIME_MIN = 900;
     public static final int CREDENTIAL_LIFETIME_MAX = 43200;
@@ -193,7 +194,7 @@ public class AWSAssumeRole implements Cloneable
                 "sts-temp",
                 permanentCredentials.getAccessKeyId(),
                 permanentCredentials.getSecretKey())
-                .withService("sts")
+                .withService(AWS_STS_SIGNAME)
                 .withRegion(AWS_STS_REGION)
                 .build();
         signedRequest.applyProfile(stsProfile);
