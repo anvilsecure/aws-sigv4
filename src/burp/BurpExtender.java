@@ -8,7 +8,7 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.*;
+import java.io.StringReader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -43,7 +43,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     protected LogWriter logger;
 
     private JLabel statusLabel;
-    protected JCheckBox signingEnabledCheckBox;
+    private JCheckBox signingEnabledCheckBox;
     private JComboBox defaultProfileComboBox;
     private JComboBox logLevelComboBox;
     private JCheckBox persistProfilesCheckBox;
@@ -421,10 +421,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         });
     }
 
-    private boolean isSigningEnabled()
+    public boolean isSigningEnabled()
     {
         return this.signingEnabledCheckBox.isSelected();
     }
+    public boolean isInScopeOnlyEnabled() { return this.inScopeOnlyCheckBox.isSelected(); }
 
 
     @Override

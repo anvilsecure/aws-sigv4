@@ -9,8 +9,6 @@ public class AWSMessageEditorTab implements IMessageEditorTab
 {
     private final String TAB_NAME = "SigV4";
     private IMessageEditorController controller;
-    private IBurpExtenderCallbacks callbacks;
-    private IExtensionHelpers helpers;
     private BurpExtender burp;
     private LogWriter logger;
     private ITextEditor messageTextEditor;
@@ -20,8 +18,6 @@ public class AWSMessageEditorTab implements IMessageEditorTab
     {
         this.controller = controller;
         this.burp = burp;
-        this.callbacks = burp.callbacks;
-        this.helpers = burp.helpers;
         this.logger = burp.logger;
     }
 
@@ -32,7 +28,7 @@ public class AWSMessageEditorTab implements IMessageEditorTab
 
     @Override
     public Component getUiComponent() {
-        this.messageTextEditor = this.callbacks.createTextEditor();
+        this.messageTextEditor = this.burp.callbacks.createTextEditor();
         this.messageTextEditor.setEditable(false); // this is just a preview of the signed message
         return this.messageTextEditor.getComponent();
     }
@@ -41,7 +37,10 @@ public class AWSMessageEditorTab implements IMessageEditorTab
     public boolean isEnabled(byte[] content, boolean isRequest) {
         // enable for requests only
         if (isRequest) {
-            IRequestInfo requestInfo = this.helpers.analyzeRequest(content);
+            // we only check if its an aws request here, skipping checks for whether signing is enabled or if its in scope.
+            // this is because isEnabled() is only called once, so toggling in-scope only or signing enabled will have no
+            // effect on current editor tabs.
+            IRequestInfo requestInfo = this.burp.helpers.analyzeRequest(content);
             return BurpExtender.isAwsRequest(requestInfo);
         }
         return false;
@@ -49,14 +48,24 @@ public class AWSMessageEditorTab implements IMessageEditorTab
 
     @Override
     public void setMessage(byte[] content, boolean isRequest) {
-        if (this.burp.signingEnabledCheckBox.isSelected()) {
+        if (this.burp.isSigningEnabled()) {
+
+            // if request is not in scope, display a warning instead
+            if (this.burp.isInScopeOnlyEnabled()) {
+                IRequestInfo requestInfo = this.burp.helpers.analyzeRequest(this.controller.getHttpService(), content);
+                if (!this.burp.callbacks.isInScope(requestInfo.getUrl())) {
+                    this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Request URL is not in scope: "+requestInfo.getUrl()));
+                    return;
+                }
+            }
+
             this.content = content;
 
             try {
                 AWSSignedRequest signedRequest = new AWSSignedRequest(this.controller.getHttpService(), this.content, this.burp);
                 final AWSProfile profile = this.burp.customizeSignedRequest(signedRequest);
                 if (profile == null) {
-                    this.messageTextEditor.setText(this.helpers.stringToBytes(
+                    this.messageTextEditor.setText(this.burp.helpers.stringToBytes(
                             "No profile found for keyId: " + signedRequest.getAccessKeyId() + ". Either add it or set a default profile."));
                     return;
                 }
@@ -64,10 +73,10 @@ public class AWSMessageEditorTab implements IMessageEditorTab
                 return;
             } catch (Exception exc) {
             }
-            this.messageTextEditor.setText(this.helpers.stringToBytes("Failed to sign message with SigV4"));
+            this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Failed to sign message with SigV4"));
         }
         else {
-            this.messageTextEditor.setText(this.helpers.stringToBytes("SigV4 signing is disabled"));
+            this.messageTextEditor.setText(this.burp.helpers.stringToBytes("SigV4 signing is disabled"));
         }
     }
 
