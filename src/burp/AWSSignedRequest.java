@@ -62,12 +62,12 @@ public class AWSSignedRequest
         this.request = helpers.analyzeRequest(this.httpService, requestBytes);
         this.signedHeaderSet = new HashSet<String>();
         // make sure required host and date headers are part of signature.
-        // TODO: for http/2, we need authority header
         this.signedHeaderSet.add("host");
         // requests require either one of these date headers.
         this.signedHeaderSet.add("x-amz-date");
         this.signedHeaderSet.add("date");
         this.signedHeaderSet.add("x-amz-security-token"); // for temporary creds
+        // TODO: sign all X-Amz-* headers? s3 seems to require this
 
         // make sure host header is present
         boolean hasHostHeader = false;
@@ -397,6 +397,25 @@ public class AWSSignedRequest
         return uri;
     }
 
+    /*
+    determine if the http header should be signed. some headers are always signed and so are placed in
+    this.signedHeaderSet. Other headers can optionally be signed. for s3, all "X-Amz-*" headers are
+    signed (except for pre-signed URLs).
+     */
+    private boolean shouldSignHeader(final String header)
+    {
+        if (header == null)
+            return false;
+        String[] kv = splitHttpHeader(header);
+        if (this.signedHeaderSet.contains(kv[0].toLowerCase()))
+            return true;
+        // handle case for pre-signed URLs. in this case, we can't control request headers so
+        // the only signed header is "host". s3 also requires any X-Amz-* header be signed.
+        if (isS3Request() && !isPresignedUrl() && kv[0].toLowerCase().startsWith("x-amz-"))
+            return true;
+        return false;
+    }
+
     private String getCanonicalHeaders()
     {
         // need at least Host header for HTTP/1.1 and authority header for http/2
@@ -406,7 +425,7 @@ public class AWSSignedRequest
             String[] kv = splitHttpHeader(header);
             final String nameLower = kv[0].trim().toLowerCase();
             String value = kv[1].trim().replaceAll("[ ]{2,}", " "); // shrink whitespace
-            if (this.signedHeaderSet.contains(kv[0].toLowerCase())) {
+            if (shouldSignHeader(kv[0])) {
                 if (nameLower.equals("x-amz-date")) {
                     // make sure to use current date
                     value = this.amzDate;
@@ -448,7 +467,7 @@ public class AWSSignedRequest
         Set<String> validSignedHeaderSet = new HashSet<>();
         for (final String header : this.request.getHeaders()) {
             final String nameLower = splitHttpHeader(header)[0].toLowerCase();
-            if (this.signedHeaderSet.contains(nameLower)) {
+            if (shouldSignHeader(nameLower)) {
                 validSignedHeaderSet.add(nameLower);
             }
         }
@@ -499,23 +518,25 @@ public class AWSSignedRequest
 
     /*
     get payload hash used in signature and X-Amz-Content-SHA256 header
+    returns the lowercase ascii hex digest
      */
     private String getPayloadHash()
     {
         // s3 payload signing is optional. The string "UNSIGNED-PAYLOAD" is used to signify no payload signing.
-        // if there is no payload (eg GET request) then return "UNSIGNED-PAYLOAD".
+        // if there is no payload (eg GET request) signing means an empty SHA256.
         // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
         if (isS3Request()) {
-            if (this.request.getMethod().toUpperCase().equals("GET")) {
+            // check if original request is unsigned
+            if (isPresignedUrl()) {
+                // s3 pre-signed URLs never have a signed payload
                 return "UNSIGNED-PAYLOAD";
             }
-            // check if original request is unsigned
             final String value = getHttpHeaderValue("x-amz-content-sha256");
-            if ((value == null) || (value != null && value.equals("UNSIGNED-PAYLOAD"))) {
+            if (value == null || value.equals("UNSIGNED-PAYLOAD")) {
                 return "UNSIGNED-PAYLOAD";
             }
         }
-        // hash payload (POST body)
+        // hash payload
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -647,6 +668,12 @@ public class AWSSignedRequest
     private boolean updateQueryString(final AWSCredentials credentials)
     {
         return updateQueryString(credentials, this.queryExpirationSeconds);
+    }
+
+    private boolean isPresignedUrl()
+    {
+        // see getSignedUrl() for the logic behind this check
+        return this.signedHeaderSet.size() == 1;
     }
 
     public String getSignedUrl(final AWSCredentials credentials, final int expires)

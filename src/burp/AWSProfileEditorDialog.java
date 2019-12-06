@@ -10,6 +10,7 @@ import java.awt.event.FocusListener;
 
 public class AWSProfileEditorDialog extends JDialog
 {
+    protected static final Color disabledColor = new Color(161, 161, 161);
 
     protected JTextField nameTextField;
     protected JTextField keyIdTextField;
@@ -88,12 +89,12 @@ public class AWSProfileEditorDialog extends JDialog
         rolePanel.add(new JLabel("RoleArn"), newConstraint(0, 0, GridBagConstraints.LINE_START));
         this.roleArnTextField = new JTextField("", TEXT_FIELD_WIDTH-2);
         rolePanel.add(this.roleArnTextField, newConstraint(1, 0));
-        rolePanel.add(new JLabel("SessionName"), newConstraint(0, 2, GridBagConstraints.LINE_START));
+        rolePanel.add(new JLabel("SessionName"), newConstraint(0, 1, GridBagConstraints.LINE_START));
         this.sessionNameTextField = new OptionalJTextField("", TEXT_FIELD_WIDTH-2);
-        rolePanel.add(this.sessionNameTextField, newConstraint(1, 2));
-        rolePanel.add(new JLabel("ExternalId"), newConstraint(0, 1, GridBagConstraints.LINE_START));
+        rolePanel.add(this.sessionNameTextField, newConstraint(1, 1));
+        rolePanel.add(new JLabel("ExternalId"), newConstraint(0, 2, GridBagConstraints.LINE_START));
         this.externalIdTextField = new OptionalJTextField("", TEXT_FIELD_WIDTH-2);
-        rolePanel.add(this.externalIdTextField, newConstraint(1, 1));
+        rolePanel.add(this.externalIdTextField, newConstraint(1, 2));
         outerPanel.add(rolePanel, newConstraint(0, 2, GridBagConstraints.LINE_START));
 
         statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
@@ -209,15 +210,10 @@ class OptionalJTextField extends JTextField implements FocusListener
 {
     private Font defaultFont;
     private Color defaultForegroundColor;
-    private Color optionalForegroundColor;
+    private Color hintForegroundColor = AWSProfileEditorDialog.disabledColor;;
 
     public OptionalJTextField(String content, int width) {
         super(content, width);
-        init();
-    }
-
-    public OptionalJTextField(String content) {
-        super(content);
         init();
     }
 
@@ -225,7 +221,6 @@ class OptionalJTextField extends JTextField implements FocusListener
         defaultFont = getFont();
         addFocusListener(this);
         defaultForegroundColor = getForeground();
-        optionalForegroundColor = new Color(0xbb, 0xbb, 0xbb);
         if (super.getText().equals("")) {
             setHintText();
         }
@@ -249,7 +244,7 @@ class OptionalJTextField extends JTextField implements FocusListener
 
     private void setHintText() {
         setFont(new Font(defaultFont.getFamily(), Font.ITALIC, defaultFont.getSize()));
-        setForeground(optionalForegroundColor);
+        setForeground(hintForegroundColor);
         super.setText("Optional");
     }
 

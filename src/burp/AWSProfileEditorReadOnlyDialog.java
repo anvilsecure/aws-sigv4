@@ -14,7 +14,6 @@ a new signature, service and region are not available in the original request.
 public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
 {
     private AWSProfile editedProfile;
-    private static final Color disabledColor = new Color(165, 161, 161);
 
     public AWSProfile getProfile() { return editedProfile; }
 
