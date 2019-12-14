@@ -11,34 +11,23 @@ SigV4 uses a timestamp to give signatures a lifetime of 15 minutes. When using t
 
 
 ## Build Instructions
-This assumes maven is installed properly as well as a Java Development Kit.
+This assumes gradle is installed properly as well as a Java Development Kit.
 
 ```
-$ cd src
-$ mvn package
-[INFO] Scanning for projects...
-[INFO]
-[INFO] ---------------------------< groupId:awsig >----------------------------
-[INFO] Building awsig 1.0-SNAPSHOT
-[INFO] --------------------------------[ jar ]---------------------------------
-[...]
-[INFO] BUILD SUCCESS
-[INFO] ------------------------------------------------------------------------
-[INFO] Total time:  1.590 s
-[INFO] Finished at: 2019-04-10T08:31:35+02:00
-[INFO] ------------------------------------------------------------------------
-$ ls target
-archive-tmp
-awsig-1.0-SNAPSHOT.jar
-classes
-generated-sources
-maven-archiver
-maven-status
+$ gradle bigJar
+> Task :compileJava NO-SOURCE
+> Task :processResources NO-SOURCE
+> Task :classes UP-TO-DATE
+> Task :bigJar
+
+BUILD SUCCESSFUL in 0s
+1 actionable task: 1 executed
+$ 
 ```
 
-That will result in a newly created `target` directory with class files as well
-as a single JAR containing all the dependencies named `awsig-<version>.jar`.
-This JAR can be loaded into Burp using the Extender tab.
+That will result in a newly created `build/libs` directory with a single JAR
+containing all the dependencies named `awsig-<version>.jar`. This JAR can be
+loaded into Burp using the Extender tab.
 
 Loading the project up in IntelliJ IDEA should also make it easy to build the
 source.

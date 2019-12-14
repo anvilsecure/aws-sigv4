@@ -28,9 +28,14 @@
 # When using Gradle or Maven with auto-import, you should exclude module files,
 # since they will be recreated, and may cause churn.  Uncomment if using
 # auto-import.
-# .idea/modules.xml
-# .idea/*.iml
-# .idea/modules
+.idea/modules.xml
+.idea/*.iml
+.idea/modules
+.idea/artifacts
+.idea/compiler.xml
+.idea/jarRepositories.xml
+*.iml
+*.ipr
 
 # CMake
 cmake-build-*/
@@ -109,3 +114,22 @@ buildNumber.properties
 
 # other
 .idea/codeStyles/
+.idea/.name
+.idea/vcs.xml
+stale_outputs_checked
+
+#################
+# gradle
+#################
+.gradle
+/build/
+gradle
+
+# Ignore Gradle GUI config
+gradle-app.setting
+
+# Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
+!gradle-wrapper.jar
+
+# Cache of project
+.gradletasknamecache
