@@ -14,14 +14,11 @@ SigV4 uses a timestamp to give signatures a lifetime of 15 minutes. When using t
 This assumes gradle is installed properly as well as a Java Development Kit.
 
 ```
-$ gradle bigJar
-> Task :compileJava NO-SOURCE
-> Task :processResources NO-SOURCE
-> Task :classes UP-TO-DATE
-> Task :bigJar
+$ ./gradlew bigJar
+> Task :compileJava
 
-BUILD SUCCESSFUL in 0s
-1 actionable task: 1 executed
+BUILD SUCCESSFUL in 1s
+2 actionable task: 2 executed
 $ 
 ```
 
