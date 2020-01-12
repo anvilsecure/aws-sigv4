@@ -309,7 +309,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     if (profile.getCredential().isTemporary()) {
                         // temp creds require a username be specified. use profile name as default, even though this
                         // doesn't necessarily map to an actual iam username
-                        requestBody += "&UserName="+profile.getName();
+                        requestBody += "&UserName="+helpers.urlEncode(profile.getName());
                     }
                     List<String> headers = new ArrayList<>();
                     headers.add("POST / HTTP/1.1");
