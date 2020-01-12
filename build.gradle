@@ -10,10 +10,6 @@ repositories {
     mavenCentral()
 }
 
-sourceSets {
-    main.java.srcDirs = [ 'src/burp' ]
-}
-
 dependencies {
     implementation 'net.portswigger.burp.extender:burp-extender-api:2.1'
     compile 'javax.xml.bind:jaxb-api:2.3.0'
