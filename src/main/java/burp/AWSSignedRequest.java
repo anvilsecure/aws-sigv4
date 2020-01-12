@@ -11,6 +11,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.stream.Collectors;
 
 /*
 This class computes the SigV4 for AWS requests using SHA256.
@@ -19,6 +20,9 @@ See documentation here: https://docs.aws.amazon.com/general/latest/gr/sigv4_sign
 */
 public class AWSSignedRequest
 {
+    // if present, choose a profile based on this header
+    //   X-BurpAwsig-Profile: default
+    private static final String PROFILE_HEADER_NAME = "x-burpawsig-profile";
     // set of headers to remove and update
     private HashSet<String> updateHeaderSet = new HashSet<>(Arrays.asList(
             "x-amz-credential", "x-amz-date", "x-amz-algorithm", "x-amz-expires", "x-amz-signedheaders", "x-amz-signature", "x-amz-content-sha256", "x-amz-security-token"
@@ -158,6 +162,17 @@ public class AWSSignedRequest
         // there was a reason for calling init() here but not sure if its still necessary
         //signedRequest.init(signedRequest.requestBytes);
         return signedRequest;
+    }
+
+    public String getProfileHeaderValue()
+    {
+        for (final String header : this.request.getHeaders()) {
+            String h[] = splitHttpHeader(header);
+            if (h[0].toLowerCase().equals(PROFILE_HEADER_NAME)) {
+                return h[1];
+            }
+        }
+        return null;
     }
 
     /*
@@ -630,7 +645,7 @@ public class AWSSignedRequest
     update URL parameters for signed GET requests
     For query string params: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
     */
-    private boolean updateQueryString(final AWSCredentials credentials, final int expires)
+    private boolean updateQueryString(final AWSCredential credential, final int expires)
     {
         // NOTE: updateParameter is case sensitive so we remove after a lowercase name compare then re-add with proper case.
         for (IParameter param : this.request.getParameters()) {
@@ -650,24 +665,24 @@ public class AWSSignedRequest
         this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Expires", Integer.toString(expires), IParameter.PARAM_URL));
 
         // NOTE: whether or not this is part of the signature may be service dependent
-        if (credentials.getSessionToken() != null) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Security-Token", credentials.getSessionToken(), IParameter.PARAM_URL));
+        if (credential.getSessionToken() != null) {
+            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Security-Token", credential.getSessionToken(), IParameter.PARAM_URL));
         }
 
         // save signed headers and signature for last, after all other params have been updated.
         this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
         this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-SignedHeaders", getCanonicalSignedHeaders().replace(";", "%3B"), IParameter.PARAM_URL));
         this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
-        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Signature", getSignature(credentials.getSecretKey()), IParameter.PARAM_URL));
+        this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Signature", getSignature(credential.getSecretKey()), IParameter.PARAM_URL));
 
         // update request object since we modified the parameters
         this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
         return true;
     }
 
-    private boolean updateQueryString(final AWSCredentials credentials)
+    private boolean updateQueryString(final AWSCredential credential)
     {
-        return updateQueryString(credentials, this.queryExpirationSeconds);
+        return updateQueryString(credential, this.queryExpirationSeconds);
     }
 
     private boolean isPresignedUrl()
@@ -676,7 +691,7 @@ public class AWSSignedRequest
         return this.signedHeaderSet.size() == 1;
     }
 
-    public String getSignedUrl(final AWSCredentials credentials, final int expires)
+    public String getSignedUrl(final AWSCredential credential, final int expires)
     {
         updateAmzDate();
         // sign just the host header since we can't control which headers are sent when this
@@ -684,20 +699,20 @@ public class AWSSignedRequest
         Set<String> headerSet = this.signedHeaderSet;
         this.signedHeaderSet = new HashSet<>(Arrays.asList("host"));
         String url = "";
-        if (updateQueryString(credentials, expires)) {
+        if (updateQueryString(credential, expires)) {
             url = this.request.getUrl().toString();
         }
         this.signedHeaderSet = headerSet;
         return url;
     }
 
-    public byte[] getSignedRequestBytes(final AWSCredentials credentials)
+    public byte[] getSignedRequestBytes(final AWSCredential credential)
     {
         // update timestamp before signing. will be good for 15 minutes
         updateAmzDate();
 
         // set this in case we are using temporary credentials and the id changed
-        setAccessKeyId(credentials.getAccessKeyId());
+        setAccessKeyId(credential.getAccessKeyId());
 
         // attempt to keep signature in original location (url or headers). if there is a mix of signature
         // params in headers and the query string, this will likely break
@@ -726,8 +741,8 @@ public class AWSSignedRequest
                     headers.set(i, String.format("Content-MD5: %s", getContentMD5()));
                 }
                 else if (nameLower.startsWith("x-amz-security-token:")) {
-                    if (credentials.getSessionToken() != null) {
-                        headers.set(i, String.format("X-Amz-Security-Token: %s", credentials.getSessionToken()));
+                    if (credential.getSessionToken() != null) {
+                        headers.set(i, String.format("X-Amz-Security-Token: %s", credential.getSessionToken()));
                         sessionTokenUpdated = true;
                     }
                 }
@@ -742,8 +757,8 @@ public class AWSSignedRequest
             }
 
             // NOTE: whether or not this is part of the signature may be service dependent
-            if (!sessionTokenUpdated && credentials.getSessionToken() != null) {
-                headers.add(String.format("X-Amz-Security-Token: %s", credentials.getSessionToken()));
+            if (!sessionTokenUpdated && credential.getSessionToken() != null) {
+                headers.add(String.format("X-Amz-Security-Token: %s", credential.getSessionToken()));
             }
 
             // save Authorization header for last since it is dependent on other headers which may have changed.
@@ -752,10 +767,12 @@ public class AWSSignedRequest
             // so rebuilding isn't necessary?
             this.requestBytes = this.helpers.buildHttpMessage(headers, getPayloadBytes());
             this.request = helpers.analyzeRequest(this.httpService, this.requestBytes);
-            headers = this.request.getHeaders();
+            // remove the profile specification header since it is for burp only
+            headers = this.request.getHeaders().stream()
+                    .filter(h -> !h.toLowerCase().startsWith(PROFILE_HEADER_NAME)).collect(Collectors.toList());
 
             boolean authUpdated = false;
-            final String newAuthHeader = getAuthorizationHeader(credentials.getSecretKey());
+            final String newAuthHeader = getAuthorizationHeader(credential.getSecretKey());
             for (int i = 0; i < headers.size(); i++) {
                 if (headers.get(i).toLowerCase().startsWith("authorization:")) {
                     headers.set(i, newAuthHeader);
@@ -770,7 +787,7 @@ public class AWSSignedRequest
         }
 
         // for non-POST requests, update signature in query string. this will almost always be a GET request.
-        if (updateQueryString(credentials)) {
+        if (updateQueryString(credential)) {
             byte[] payload = getPayloadBytes();
             return this.helpers.buildHttpMessage(this.request.getHeaders(), payload.length == 0 ? null : payload);
         }
