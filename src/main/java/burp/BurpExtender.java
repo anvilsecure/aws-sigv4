@@ -297,13 +297,20 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 //   * if profile has a region set, it will override the region set here
                 //     - temp fix is to check "In-scope Only" and ensure AWS_IAM_HOSTNAME is not in scope
                 //   * this currently won't change the default profile if it's set which could be confusing
+                //   * for temp creds, this will insert a temporary keyId which likely wont be part of a profile.
+                //     therefore the request will not be able to be re-signed unless the keyId is updated.
                 int[] rowIndeces = profileTable.getSelectedRows();
                 DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                 if (rowIndeces.length == 1) {
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
                     AWSProfile profile = profileNameMap.get(name);
                     // build the request
-                    final byte[] body = helpers.stringToBytes("Version=2010-05-08&Action=GetUser");
+                    String requestBody = "Version=2010-05-08&Action=GetUser";
+                    if (profile.getCredential().isTemporary()) {
+                        // temp creds require a username be specified. use profile name as default, even though this
+                        // doesn't necessarily map to an actual iam username
+                        requestBody += "&UserName="+profile.getName();
+                    }
                     List<String> headers = new ArrayList<>();
                     headers.add("POST / HTTP/1.1");
                     headers.add("Host: "+AWS_IAM_HOSTNAME);
@@ -311,7 +318,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     IHttpService httpService = helpers.buildHttpService(AWS_IAM_HOSTNAME, 443, true);
                     AWSSignedRequest signedRequest = new AWSSignedRequest(
                             httpService,
-                            helpers.buildHttpMessage(headers, body),
+                            helpers.buildHttpMessage(headers, helpers.stringToBytes(requestBody)),
                             BurpExtender.this);
                     signedRequest.applyProfile(profile);
                     signedRequest.setRegion(AWS_IAM_REGION);
@@ -319,7 +326,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     callbacks.sendToRepeater(httpService.getHost(),
                             httpService.getPort(),
                             true /* useHttps */,
-                            signedRequest.getSignedRequestBytes(profile.getCredentials()),
+                            signedRequest.getSignedRequestBytes(profile.getCredential()),
                             profile.getName());
                 }
                 else {
@@ -618,7 +625,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             }
                             else {
                                 // sign a url valid for 120 seconds. XXX consider making this configurable.
-                                signedUrl = signedRequest.getSignedUrl(profile.getCredentials(), 120);
+                                signedUrl = signedRequest.getSignedUrl(profile.getCredential(), 120);
                             }
                             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                             clipboard.setContents(new StringSelection(signedUrl), null);
@@ -666,7 +673,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                     }
                                     signedRequest.applyProfile(dialog.getProfile());
                                 }
-                                messages[0].setRequest(signedRequest.getSignedRequestBytes(profile.getCredentials()));
+                                messages[0].setRequest(signedRequest.getSignedRequestBytes(profile.getCredential()));
                             }
                         });
                         addSignatureMenu.add(sigItem);
@@ -694,7 +701,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 final AWSProfile newProfile = customizeSignedRequest(signedRequest);
                                 if (newProfile != null) {
                                     signedRequest.applyProfile(newProfile);
-                                    messages[0].setRequest(signedRequest.getSignedRequestBytes(newProfile.getCredentials()));
+                                    messages[0].setRequest(signedRequest.getSignedRequestBytes(newProfile.getCredential()));
                                 } // else... XXX maybe display an error dialog here
                                 return;
                             }
@@ -715,7 +722,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             if (dialog.getProfile() != null) {
                                 // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.
                                 signedRequest.applyProfile(dialog.getProfile());
-                                messages[0].setRequest(signedRequest.getSignedRequestBytes(editedProfile.getCredentials()));
+                                messages[0].setRequest(signedRequest.getSignedRequestBytes(editedProfile.getCredential()));
                             }
                         }
                     });
@@ -943,7 +950,27 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
      */
     public AWSProfile customizeSignedRequest(AWSSignedRequest signedRequest)
     {
-        AWSProfile profile = getSigningProfile(signedRequest.getAccessKeyId());
+        AWSProfile profile = null;
+
+        // check if the "X-BurpAwsig-Profile: PROFILE" was used to specify a profile
+        if (getDefaultProfileName() == NO_DEFAULT_PROFILE) {
+            // no default profile is used, which would have precedence
+            final String profileHeader = signedRequest.getProfileHeaderValue();
+            if (profileHeader != null) {
+                profile = this.profileNameMap.get(profileHeader);
+                if (profile != null) {
+                    logger.debug("Using profile from header: "+profile.getName());
+                }
+                else {
+                    logger.debug("Profile from header not found: "+profileHeader);
+                }
+            }
+        }
+
+        if (profile == null) {
+            profile = getSigningProfile(signedRequest.getAccessKeyId());
+        }
+
         if (profile == null) {
             logger.error("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
             return null;
@@ -981,14 +1008,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     return;
                 }
 
-                AWSCredentials credentials = profile.getCredentials();
-                if (credentials == null) {
+                AWSCredential credential = profile.getCredential();
+                if (credential == null) {
                     // assume role failure
                     logger.error("Failed to get credentials for profile: "+profile.getName());
                     return;
                 }
                 else {
-                    byte[] requestBytes = signedRequest.getSignedRequestBytes(credentials);
+                    byte[] requestBytes = signedRequest.getSignedRequestBytes(credential);
                     if (requestBytes != null) {
                         logger.info("Signed request with profile: " + profile);
                         messageInfo.setRequest(requestBytes);

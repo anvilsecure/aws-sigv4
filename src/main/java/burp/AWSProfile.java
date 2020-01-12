@@ -289,17 +289,17 @@ public class AWSProfile implements Cloneable
         return exportLines.size();
     }
 
-    public AWSCredentials getPermanentCredentials()
+    private AWSPermanentCredential getPermanentCredential()
     {
-        return new AWSCredentials(this.accessKeyId, this.secretKey);
+        return new AWSPermanentCredential(this.accessKeyId, this.secretKey);
     }
 
-    public AWSCredentials getCredentials()
+    public AWSCredential getCredential()
     {
         if (assumeRole != null && assumeRoleEnabled) {
-            return assumeRole.getTemporaryCredentials(getPermanentCredentials());
+            return assumeRole.getTemporaryCredential(getPermanentCredential());
         }
-        return getPermanentCredentials();
+        return getPermanentCredential();
     }
 
     @Override

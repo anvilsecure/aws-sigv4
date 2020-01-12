@@ -3,7 +3,6 @@ package burp;
 import javax.json.Json;
 import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
-import javax.management.RuntimeErrorException;
 import javax.swing.*;
 import java.io.IOException;
 import java.io.StringReader;
@@ -21,7 +20,7 @@ public class AWSAssumeRole implements Cloneable
     private int durationSeconds;
     private String externalId;
 
-    private AWSCredentials credentials;
+    private AWSTemporaryCredential credential;
     private BurpExtender burp;
 
     private static final String AWS_STS_HOSTNAME = "sts.amazonaws.com";
@@ -44,6 +43,15 @@ public class AWSAssumeRole implements Cloneable
     public int getDurationSeconds()
     {
         return this.durationSeconds;
+    }
+
+    private AWSAssumeRole(final String roleArn, BurpExtender burp)
+    {
+        setRoleArn(roleArn);
+        this.sessionName = createDefaultRoleSessionName();
+        this.durationSeconds = CREDENTIAL_LIFETIME_MIN;
+        this.externalId = "";
+        this.burp = burp;
     }
 
     private void setExternalId(final String externalId) {
@@ -139,35 +147,26 @@ public class AWSAssumeRole implements Cloneable
         return String.format("%s_%d", ROLE_SESSION_NAME_DEFAULT_PREFIX, System.currentTimeMillis());
     }
 
-    private AWSAssumeRole(final String roleArn, BurpExtender burp)
+    public AWSCredential getTemporaryCredential(final AWSCredential permanentCredential)
     {
-        setRoleArn(roleArn);
-        this.sessionName = createDefaultRoleSessionName();
-        this.durationSeconds = CREDENTIAL_LIFETIME_MIN;
-        this.externalId = null;
-        this.burp = burp;
-    }
-
-    public AWSCredentials getTemporaryCredentials(final AWSCredentials permanentCredentials)
-    {
-        if ((this.credentials == null) || (this.credentials.secondsToExpire() < CREDENTIAL_RENEWAL_AGE)) {
+        if ((this.credential == null) || (this.credential.secondsToExpire() < CREDENTIAL_RENEWAL_AGE)) {
             // signature is expired or about to expire. get new credentials
-            renewCredentials(permanentCredentials);
+            renewCredential(permanentCredential);
         }
-        if (this.credentials == null) {
+        if (this.credential == null) {
             JOptionPane.showMessageDialog(this.burp.getUiComponent(), String.format("Failed to retrieve temp credentials for: "+this.roleArn));
             throw new RuntimeException("Failed to retrieve temp credentials for: "+this.roleArn);
         }
-        return credentials;
+        return credential;
     }
 
     /*
     fetch new temporary credentials.
      */
-    private boolean renewCredentials(final AWSCredentials permanentCredentials)
+    private boolean renewCredential(final AWSCredential permanentCredential)
     {
         burp.logger.info("Fetching temporary credentials for role "+this.roleArn);
-        this.credentials = null;
+        this.credential = null;
 
         List<String> headers = new ArrayList<>();
         headers.add("POST / HTTP/1.1");
@@ -192,13 +191,13 @@ public class AWSAssumeRole implements Cloneable
                 burp);
         AWSProfile stsProfile = new AWSProfile.Builder(
                 "sts-temp",
-                permanentCredentials.getAccessKeyId(),
-                permanentCredentials.getSecretKey())
+                permanentCredential.getAccessKeyId(),
+                permanentCredential.getSecretKey())
                 .withService(AWS_STS_SIGNAME)
                 .withRegion(AWS_STS_REGION)
                 .build();
         signedRequest.applyProfile(stsProfile);
-        byte[] signedBytes = signedRequest.getSignedRequestBytes(permanentCredentials);
+        byte[] signedBytes = signedRequest.getSignedRequestBytes(permanentCredential);
 
         // create http client. get final headers for request.
         HttpClient httpClient = HttpClient.newBuilder()
@@ -236,16 +235,16 @@ public class AWSAssumeRole implements Cloneable
         burp.logger.debug(String.format("HTTP Response %d %s", response.statusCode(), responseBody));
         JsonObject sessionObj = Json.createReader(new StringReader(responseBody)).readObject();
         if (response.statusCode() != 200) {
-            burp.logger.error("Failed to retrieve temporary credentials for profile: "+permanentCredentials.getAccessKeyId());
+            burp.logger.error("Failed to retrieve temporary credentials for profile: "+permanentCredential.getAccessKeyId());
             return false;
         }
         JsonObject credentialsObj = sessionObj.getJsonObject("AssumeRoleResponse").getJsonObject("AssumeRoleResult").getJsonObject("Credentials");
-        this.credentials = new AWSCredentials(
+        this.credential = new AWSTemporaryCredential(
                 credentialsObj.getString("AccessKeyId"),
                 credentialsObj.getString("SecretAccessKey"),
                 credentialsObj.getString("SessionToken"),
                 credentialsObj.getInt("Expiration"));
-        burp.logger.info("Received temporary credentials with accessKeyId "+this.credentials.getAccessKeyId());
+        burp.logger.info("Received temporary credentials with accessKeyId "+this.credential.getAccessKeyId());
         return true;
     }
 
