@@ -17,7 +17,7 @@ import java.util.*;
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
-    private static final String AWSIG_VERSION = "1.2.0";
+    private static final String AWSIG_VERSION = "1.2.1";
     private static final String SETTING_VERSION = "AwsigVersion";
 
     private static final String SETTING_PROFILES = "SerializedProfileList";
@@ -658,6 +658,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                     dialog.disableName();
                                     dialog.disableKeyId();
                                     dialog.disableSecret();
+                                    dialog.disableToken();
                                     dialog.disableAssumeRole();
                                     // set focus to first missing field
                                     if (signedRequest.getRegion().equals("")) {
@@ -717,6 +718,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             dialog.disableName();
                             dialog.disableKeyId();
                             dialog.disableSecret();
+                            dialog.disableToken();
                             dialog.disableAssumeRole();
                             dialog.setVisible(true);
                             if (dialog.getProfile() != null) {

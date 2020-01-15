@@ -15,6 +15,7 @@ public class AWSProfileEditorDialog extends JDialog
     protected JTextField nameTextField;
     protected JTextField keyIdTextField;
     protected JTextField secretKeyTextField;
+    protected JTextField sessionTokenTextField;
     protected JTextField regionTextField;
     protected JTextField serviceTextField;
 
@@ -65,20 +66,23 @@ public class AWSProfileEditorDialog extends JDialog
         JPanel basicPanel = new JPanel(new GridBagLayout());
         basicPanel.setBorder(new TitledBorder("Credentials"));
         basicPanel.add(new JLabel("Name"), newConstraint(0, 0, GridBagConstraints.LINE_START));
-        this.nameTextField = new JTextField("", TEXT_FIELD_WIDTH);
+        this.nameTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Required");
         basicPanel.add(nameTextField, newConstraint(1, 0));
-        basicPanel.add(new JLabel("KeyId"), newConstraint(0, 1, GridBagConstraints.LINE_START));
-        this.keyIdTextField = new JTextField("", TEXT_FIELD_WIDTH);
+        basicPanel.add(new JLabel("AccessKeyId"), newConstraint(0, 1, GridBagConstraints.LINE_START));
+        this.keyIdTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Required");
         basicPanel.add(keyIdTextField, newConstraint(1, 1));
         basicPanel.add(new JLabel("SecretKey"), newConstraint(0, 2, GridBagConstraints.LINE_START));
-        this.secretKeyTextField = new JTextField("", TEXT_FIELD_WIDTH);
+        this.secretKeyTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Required");
         basicPanel.add(secretKeyTextField, newConstraint(1, 2));
-        basicPanel.add(new JLabel("Region"), newConstraint(0, 3, GridBagConstraints.LINE_START));
-        this.regionTextField = new OptionalJTextField("", TEXT_FIELD_WIDTH);
-        basicPanel.add(regionTextField, newConstraint(1, 3));
-        basicPanel.add(new JLabel("Service"), newConstraint(0, 4, GridBagConstraints.LINE_START));
-        this.serviceTextField = new OptionalJTextField("", TEXT_FIELD_WIDTH);
-        basicPanel.add(serviceTextField, newConstraint(1, 4));
+        basicPanel.add(new JLabel("SessionToken"), newConstraint(0, 3, GridBagConstraints.LINE_START));
+        this.sessionTokenTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Optional");
+        basicPanel.add(sessionTokenTextField, newConstraint(1, 3));
+        basicPanel.add(new JLabel("Region"), newConstraint(0, 4, GridBagConstraints.LINE_START));
+        this.regionTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Optional");
+        basicPanel.add(regionTextField, newConstraint(1, 4));
+        basicPanel.add(new JLabel("Service"), newConstraint(0, 5, GridBagConstraints.LINE_START));
+        this.serviceTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Optional");
+        basicPanel.add(serviceTextField, newConstraint(1, 5));
         outerPanel.add(basicPanel, newConstraint(0, 0, GridBagConstraints.LINE_START));
 
         // panel for assume role fields
@@ -87,13 +91,13 @@ public class AWSProfileEditorDialog extends JDialog
         JPanel rolePanel = new JPanel(new GridBagLayout());
         rolePanel.setBorder(new TitledBorder("Role"));
         rolePanel.add(new JLabel("RoleArn"), newConstraint(0, 0, GridBagConstraints.LINE_START));
-        this.roleArnTextField = new JTextField("", TEXT_FIELD_WIDTH-2);
+        this.roleArnTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Required");
         rolePanel.add(this.roleArnTextField, newConstraint(1, 0));
         rolePanel.add(new JLabel("SessionName"), newConstraint(0, 1, GridBagConstraints.LINE_START));
-        this.sessionNameTextField = new OptionalJTextField("", TEXT_FIELD_WIDTH-2);
+        this.sessionNameTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Optional");
         rolePanel.add(this.sessionNameTextField, newConstraint(1, 1));
         rolePanel.add(new JLabel("ExternalId"), newConstraint(0, 2, GridBagConstraints.LINE_START));
-        this.externalIdTextField = new OptionalJTextField("", TEXT_FIELD_WIDTH-2);
+        this.externalIdTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Optional");
         rolePanel.add(this.externalIdTextField, newConstraint(1, 2));
         outerPanel.add(rolePanel, newConstraint(0, 2, GridBagConstraints.LINE_START));
 
@@ -150,14 +154,18 @@ public class AWSProfileEditorDialog extends JDialog
                         }
                     }
 
-                    AWSProfile newProfile = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
+                    AWSProfile.Builder newProfileBuilder = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
                             .withRegion(regionTextField.getText())
                             .withService(serviceTextField.getText())
                             .withAssumeRoleEnabled(assumeRoleCheckbox.isSelected())
-                            .withAssumeRole(assumeRole)
-                            .build();
+                            .withAssumeRole(assumeRole);
 
-                    burp.updateProfile(profile, newProfile);
+                    final String token = sessionTokenTextField.getText();
+                    if (!token.equals("")) {
+                        newProfileBuilder.withSessionToken(token);
+                    }
+
+                    burp.updateProfile(profile, newProfileBuilder.build());
                     setVisible(false);
                     dispose();
                 } catch (IllegalArgumentException exc) {
@@ -190,6 +198,7 @@ public class AWSProfileEditorDialog extends JDialog
             nameTextField.setText(profile.getName());
             keyIdTextField.setText(profile.getAccessKeyId());
             secretKeyTextField.setText(profile.getSecretKey());
+            sessionTokenTextField.setText(profile.getSessionToken());
             regionTextField.setText(profile.getRegion());
             serviceTextField.setText(profile.getService());
             assumeRoleCheckbox.setSelected(profile.getAssumeRoleEnabled());
@@ -206,14 +215,16 @@ public class AWSProfileEditorDialog extends JDialog
 /*
 This class implements a JTextField with "Optional" hint text when no user input is present.
  */
-class OptionalJTextField extends JTextField implements FocusListener
+class JTextFieldHint extends JTextField implements FocusListener
 {
     private Font defaultFont;
     private Color defaultForegroundColor;
     private Color hintForegroundColor = AWSProfileEditorDialog.disabledColor;;
+    private String hintText;
 
-    public OptionalJTextField(String content, int width) {
+    public JTextFieldHint(String content, int width, String hintText) {
         super(content, width);
+        this.hintText = hintText;
         init();
     }
 
@@ -245,7 +256,7 @@ class OptionalJTextField extends JTextField implements FocusListener
     private void setHintText() {
         setFont(new Font(defaultFont.getFamily(), Font.ITALIC, defaultFont.getSize()));
         setForeground(hintForegroundColor);
-        super.setText("Optional");
+        super.setText(hintText);
     }
 
     private void setUserText(final String text) {

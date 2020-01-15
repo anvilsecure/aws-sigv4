@@ -3,6 +3,7 @@ package burp;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.xml.bind.DatatypeConverter;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
@@ -44,14 +45,14 @@ public class AWSSignedRequest
     private boolean signatureInHeaders = false;
 
     // regex for the "Credential" parameter in the "Authorization" header or the "X-Amz-Credential" query string param
-    private static Pattern credentialRegex = Pattern.compile("^Credential=[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{0,64}/[a-z0-9-]{0,64}/aws4_request,?$",
+    //TODO should probably match regex in AWSProfile for individual components
+    private static final Pattern credentialRegex = Pattern.compile("^Credential=[\\w]{16,128}/[0-9]{8}/[a-z0-9-]{0,64}/[a-z0-9-]{0,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
-    private static Pattern credentialValueRegex = Pattern.compile("^[a-z0-9]{1,64}/[0-9]{8}/[a-z0-9-]{0,64}/[a-z0-9-]{0,64}/aws4_request,?$",
+    private static final Pattern credentialValueRegex = Pattern.compile("^[\\w]{16,128}[0-9]{8}/[a-z0-9-]{0,64}/[a-z0-9-]{0,64}/aws4_request,?$",
             Pattern.CASE_INSENSITIVE);
 
     // service names used in credential parameter and ARNs
     private static final String SERVICE_NAME_S3 = "s3";
-    private static final String SERVICE_NAME_SAR = "serverlessrepo";
 
     @Override
     public String toString()
@@ -71,7 +72,6 @@ public class AWSSignedRequest
         this.signedHeaderSet.add("x-amz-date");
         this.signedHeaderSet.add("date");
         this.signedHeaderSet.add("x-amz-security-token"); // for temporary creds
-        // TODO: sign all X-Amz-* headers? s3 seems to require this
 
         // make sure host header is present
         boolean hasHostHeader = false;
@@ -398,13 +398,14 @@ public class AWSSignedRequest
         String uri = this.request.getUrl().getPath();
         if (!isS3Request()) {
             // for services other than s3 the URI must be normalized by removing relative elements and duplicate path separators
-            uri = uri.replaceAll("[/]{2,}", "/");
-
-            // checks for other non-s3 services
-            if (this.service.toLowerCase().equals(SERVICE_NAME_SAR)) {
-                // need to double url encode
-                uri = this.helpers.urlEncode(uri);
+            try {
+                uri = this.request.getUrl().toURI().normalize().getRawPath();
+            } catch (URISyntaxException exc) {
+                // ignore and fall through
+                logger.error("Invalid request path encountered during canonicalization: "+uri);
             }
+            //NOTE: burp will encode to lowercase hex
+            uri = this.helpers.urlEncode(uri);
         }
         if (uri.equals("")) {
             uri = "/";

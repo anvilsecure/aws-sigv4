@@ -26,7 +26,7 @@ public class AWSAssumeRole implements Cloneable
     private static final String AWS_STS_HOSTNAME = "sts.amazonaws.com";
     private static final String AWS_STS_REGION = "us-east-1";
     private static final String AWS_STS_SIGNAME = "sts";
-    private static int CREDENTIAL_RENEWAL_AGE = 60; // seconds before expiration
+    private static long CREDENTIAL_RENEWAL_AGE = 30; // seconds before expiration
     public static final int CREDENTIAL_LIFETIME_MIN = 900;
     public static final int CREDENTIAL_LIFETIME_MAX = 43200;
     public static final String ROLE_SESSION_NAME_DEFAULT_PREFIX = "BurpAwsig";
@@ -134,7 +134,7 @@ public class AWSAssumeRole implements Cloneable
             if (externalId != null && !externalId.equals(""))
                 withExternalId(externalId);
             else
-                this.assumeRole.externalId = null;
+                this.assumeRole.externalId = "";
             return this;
         }
         public AWSAssumeRole build() {
@@ -243,7 +243,7 @@ public class AWSAssumeRole implements Cloneable
                 credentialsObj.getString("AccessKeyId"),
                 credentialsObj.getString("SecretAccessKey"),
                 credentialsObj.getString("SessionToken"),
-                credentialsObj.getInt("Expiration"));
+                credentialsObj.getJsonNumber("Expiration").longValue());
         burp.logger.info("Received temporary credentials with accessKeyId "+this.credential.getAccessKeyId());
         return true;
     }

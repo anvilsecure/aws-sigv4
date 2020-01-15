@@ -56,6 +56,8 @@ https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
 awsig respects the following environment variables:
 - AWS_ACCESS_KEY_ID
 - AWS_SECRET_ACCESS_KEY
+- AWS_SESSION_TOKEN
+- AWS_DEFAULT_REGION
 - AWS_CONFIG_FILE
 - AWS_SHARED_CREDENTIALS_FILE
 
