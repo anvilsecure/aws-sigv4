@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,6 +23,7 @@ public class AWSProfile implements Cloneable
     private String name;
     private String accessKeyId;
     private String secretKey;
+    private String sessionToken;
     private String region;
     private String service;
 
@@ -32,6 +34,7 @@ public class AWSProfile implements Cloneable
     public static final Pattern profileNamePattern = Pattern.compile("^[\\w+=,.@-]{1,64}$");
     public static final Pattern accessKeyIdPattern = Pattern.compile("^[\\w]{16,128}$");
     public static final Pattern secretKeyPattern = Pattern.compile("^[a-zA-Z0-9/+]{40,128}$"); // base64 characters. not sure on length
+    //public static final Pattern sessionTokenPattern = Pattern.compile("^[a-zA-Z0-9/+]{40,512}[=]{,2}$") // not sure
     public static final Pattern regionPattern = Pattern.compile("^[a-zA-Z]{1,4}-[a-zA-Z]{1,16}-[0-9]{1,2}$");
     public static final Pattern servicePattern = Pattern.compile("^[\\w_-]{1,64}$");
     public static final Pattern roleArnPattern = Pattern.compile("^arn:aws:iam::[0-9]{12}:role/[0-9a-zA-Z+=,.@_-]{1,64}$"); // regionless
@@ -49,6 +52,7 @@ public class AWSProfile implements Cloneable
         return this.assumeRoleEnabled;
     }
     public String getSecretKey() { return this.secretKey; }
+    public String getSessionToken() { return this.sessionToken; }
     public String getRegion() { return this.region; }
     public String getService() { return this.service; }
 
@@ -93,6 +97,10 @@ public class AWSProfile implements Cloneable
         public Builder(final AWSProfile profile) {
             this.profile = profile.clone();
         }
+        public Builder withSessionToken(final String token) {
+            this.profile.sessionToken = (token == null ? "" : token);
+            return this;
+        }
         public Builder withRegion(final String region) {
             this.profile.setRegion(region);
             return this;
@@ -116,6 +124,7 @@ public class AWSProfile implements Cloneable
 
     public AWSProfile clone() {
         return new AWSProfile.Builder(this.name, this.accessKeyId, this.secretKey)
+                .withSessionToken(this.sessionToken)
                 .withRegion(this.region)
                 .withService(this.service)
                 .withAssumeRole(this.assumeRole != null ? this.assumeRole.clone() : null)
@@ -129,6 +138,7 @@ public class AWSProfile implements Cloneable
         setName(name);
         setAccessKeyId(accessKeyId);
         setSecretKey(secretKey);
+        this.sessionToken = "";
         this.region = "";
         this.service = "";
         this.assumeRoleEnabled = false;
@@ -145,6 +155,9 @@ public class AWSProfile implements Cloneable
                 if (System.getenv("AWS_DEFAULT_REGION") != null) {
                     builder.withRegion(System.getenv("AWS_DEFAULT_REGION"));
                 }
+                if (System.getenv("AWS_SESSION_TOKEN") != null) {
+                    builder.withSessionToken(System.getenv("AWS_SESSION_TOKEN"));
+                }
                 return builder.build();
             }
         }
@@ -157,6 +170,7 @@ public class AWSProfile implements Cloneable
                 .add("name", name)
                 .add("accessKeyId", accessKeyId)
                 .add("secretKey", secretKey)
+                .add("sessionToken", sessionToken)
                 .add("region", region)
                 .add("service", service)
                 .add("assumeRoleEnabled", assumeRoleEnabled)
@@ -167,6 +181,7 @@ public class AWSProfile implements Cloneable
     public static AWSProfile fromJsonObject(final JsonObject obj, BurpExtender burp)
     {
         return new AWSProfile.Builder(obj.getString("name"), obj.getString("accessKeyId"), obj.getString("secretKey"))
+                .withSessionToken(obj.getString("sessionToken", ""))
                 .withRegion(obj.getString("region"))
                 .withService(obj.getString("service"))
                 .withAssumeRoleEnabled(obj.getBoolean("assumeRoleEnabled", false))
@@ -298,6 +313,10 @@ public class AWSProfile implements Cloneable
     {
         if (assumeRole != null && assumeRoleEnabled) {
             return assumeRole.getTemporaryCredential(getPermanentCredential());
+        }
+        if (sessionToken != null && !sessionToken.equals("")) {
+            // we don't know the duration so put the minimum of 900
+            return new AWSTemporaryCredential(accessKeyId, secretKey, sessionToken, Instant.now().getEpochSecond() + 900);
         }
         return getPermanentCredential();
     }
