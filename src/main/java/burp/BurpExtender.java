@@ -1065,6 +1065,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     byte[] requestBytes = signedRequest.getSignedRequestBytes(credential);
                     if (requestBytes != null) {
                         logger.info("Signed request with profile: " + profile);
+                        messageInfo.setComment("SigV4 "+profile.getName());
                         messageInfo.setRequest(requestBytes);
                     }
                 }
