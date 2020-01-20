@@ -63,6 +63,12 @@ public class AWSProfileEditorDialog extends JDialog
         return newConstraint(gridx, gridy, 1, 1);
     }
 
+    private String getDefaultRegion()
+    {
+        final String defaultRegion = System.getenv("AWS_DEFAULT_REGION");
+        return (defaultRegion == null) ? "" : defaultRegion;
+    }
+
     /*
     return a dialog with a form for editing profiles. optional profile param can be used to populate the form.
     set profile to null for a create form.
@@ -88,7 +94,8 @@ public class AWSProfileEditorDialog extends JDialog
         this.profileKeyIdTextField.setToolTipText("Look for this AccessKeyId in a request to automatically select this profile");
         basicPanel.add(profileKeyIdTextField, newConstraint(1, 1));
         basicPanel.add(new JLabel("Region"), newConstraint(0, 2, GridBagConstraints.LINE_START));
-        this.regionTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Optional");
+        // for add profile dialog, fill default region
+        this.regionTextField = new JTextFieldHint(profile == null ? getDefaultRegion() : "", TEXT_FIELD_WIDTH, "Optional");
         basicPanel.add(regionTextField, newConstraint(1, 2));
         basicPanel.add(new JLabel("Service"), newConstraint(0, 3, GridBagConstraints.LINE_START));
         this.serviceTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Optional");
@@ -149,8 +156,6 @@ public class AWSProfileEditorDialog extends JDialog
         JButton httpProviderCaPathButton = new JButton("CA Path");
         httpPanel.add(httpProviderCaPathButton, newConstraint(0, 1, GridBagConstraints.LINE_START));
         this.httpProviderCaPathField = new JTextFieldHint("", TEXT_FIELD_WIDTH-2, "Optional");
-        this.httpProviderCaPathField.setEditable(false);
-        this.httpProviderCaPathField.setFocusable(false);
         httpPanel.add(this.httpProviderCaPathField, newConstraint(1, 1, GridBagConstraints.LINE_START));
         providerPanel.add(httpPanel, newConstraint(0, providerPanelY++, GridBagConstraints.LINE_START));
 
@@ -340,9 +345,11 @@ class JTextFieldHint extends JTextField implements FocusListener
     private String hintText;
 
     public JTextFieldHint(String content, int width, String hintText) {
-        super(content, width);
+        // set text below to prevent NullPointerException
+        super(width);
         this.hintText = hintText;
         init();
+        setText(content);
     }
 
     void init() {
