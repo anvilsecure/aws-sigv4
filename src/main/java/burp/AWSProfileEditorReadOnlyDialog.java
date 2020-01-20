@@ -26,37 +26,15 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                AWSAssumeRole assumeRole = null;
-                try {
-                    if (profile != null && !roleArnTextField.getText().equals("")) {
-                        // edit dialog
-                        if (profile.getAssumeRole() != null) {
-                            assumeRole = new AWSAssumeRole.Builder(profile.getAssumeRole())
-                                    .withRoleArn(roleArnTextField.getText())
-                                    .tryExternalId(externalIdTextField.getText())
-                                    .tryRoleSessionName(sessionNameTextField.getText())
-                                    .build();
-                        }
-                        else {
-                            // no previous role arn
-                            assumeRole = new AWSAssumeRole.Builder(roleArnTextField.getText(), burp)
-                                    .tryExternalId(externalIdTextField.getText())
-                                    .tryRoleSessionName(sessionNameTextField.getText())
-                                    .build();
-                        }
-                    }
-
-                    editedProfile = new AWSProfile.Builder(nameTextField.getText(), keyIdTextField.getText(), secretKeyTextField.getText())
+                //TODO reprompt if no region or service given? will result in blank fields for add signature
+                if (profile != null) {
+                    editedProfile = new AWSProfile.Builder(profile)
                             .withRegion(regionTextField.getText())
                             .withService(serviceTextField.getText())
-                            .withAssumeRoleEnabled(assumeRoleCheckbox.isSelected())
-                            .withAssumeRole(assumeRole)
                             .build();
-                    setVisible(false);
-                    dispose();
-                } catch (IllegalArgumentException exc) {
-                    setStatusLabel("Failed to apply changes to profile: "+exc.getMessage());
                 }
+                setVisible(false);
+                dispose();
             }
         });
     }
@@ -68,32 +46,14 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
         textField.setFocusable(false);
     }
 
-    public void disableName()
+    public void disableForEdit()
     {
         disableField(this.nameTextField);
-    }
-
-    public void disableKeyId()
-    {
-        disableField(this.keyIdTextField);
-    }
-
-    public void disableSecret()
-    {
+        disableField(this.profileKeyIdTextField);
         disableField(this.secretKeyTextField);
-    }
-
-    public void disableToken()
-    {
         disableField(this.sessionTokenTextField);
-    }
 
-    public void disableAssumeRole()
-    {
-        disableField(this.roleArnTextField);
-        disableField(this.externalIdTextField);
-        disableField(this.sessionNameTextField);
-        this.assumeRoleCheckbox.setEnabled(false);
-        this.assumeRoleCheckbox.setForeground(disabledColor);
+        providerPanel.setVisible(false);
+        pack();
     }
 }

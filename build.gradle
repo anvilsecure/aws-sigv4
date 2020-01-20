@@ -13,8 +13,7 @@ repositories {
 dependencies {
     implementation 'net.portswigger.burp.extender:burp-extender-api:2.1'
     compile 'javax.xml.bind:jaxb-api:2.3.0'
-    implementation 'javax.json:javax.json-api:1.1.4'
-    compile 'org.glassfish:javax.json:1.1.4'
+    compile 'com.google.code.gson:gson:2.8.6'
 }
 
 task bigJar(type: Jar) {

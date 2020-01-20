@@ -36,11 +36,12 @@ for expected file format. You can also manually add credentials by clicking "Add
 to the credentials file, awsig will also check if the profile exists in the config file and
 it will pull in parameters from there.
 
-At a minimum, a profile should contain a name, keyId, and secretKey. Outgoing requests
-will be signed with the profile associated with the keyId in the original request. If
-the keyId is not recognized, the message will be sent unmodifed. Alternatively, a
+At a minimum, a profile should contain a name, a keyId, and at least 1 authentication method. Outgoing requests
+will be signed with the profile whose keyId matches the accessKeyId in the original request. If
+the accessKeyId is not recognized, the message will be sent unmodified. Alternatively, a
 "Default Profile" can be set which will be used to sign all outgoing requests regardless
-of the original keyId.
+of the original accessKeyId. The plugin will also look for the "X-BurpAwsig-Profile" HTTP header
+for a profile name to use, with highest priority.
 
 Region and service should almost always be left blank. This will ensure the region and
 service in the original request are used which is desired in most cases. If your credential
@@ -49,6 +50,47 @@ or config file contains a region for a named profile, that will be used.
 Profiles will be saved in the Burp settings store, including AWS keys, if "Persist Profiles"
 is checked. You can also "Export" credentials to a file for importing later or for use
 with the aws cli.
+
+### Authentication Methods
+
+Profiles can have multiple authentication methods.
+
+**Static Credentials**
+
+Permanent credentials issued by IAM or temporary credentials with a session token can be
+entered here.
+
+**AssumeRole**
+
+IAM roles can be assumed by entering a roleArn. Authorized credentials for calling sts:AssumeRole
+should be entered in the "Credentials" form for assuming the specified role.
+
+**HttpGet**
+
+If you are retrieving credentials in some other manner, you can serve them over HTTP and
+configure this form with the URL. An HTTP GET request will be issued to the URL and responses
+will be expected in 1 of 2 formats:
+
+```json
+{
+    "AccessKeyId": "",
+    "SecretAccessKey": ""
+}
+```
+
+or
+
+```json
+{
+    "AccessKeyId": "",
+    "SecretAccessKey": "",
+    "SessionToken": "",
+    "Expiration": ""
+}
+```
+
+Permanent credentials (no "SessionToken") will be fetched every time they are used. Temporary credentials
+will only be fetched when they are nearing expiration.
 
 ### Environment
 https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html

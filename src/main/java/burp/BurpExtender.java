@@ -1,6 +1,11 @@
 package burp;
 
-import javax.json.*;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
+
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
@@ -8,18 +13,20 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.StringReader;
+import java.lang.reflect.Type;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.*;
+import java.util.stream.Collectors;
 
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     private static final String AWSIG_VERSION = "1.2.1";
-    private static final String SETTING_VERSION = "AwsigVersion";
 
+    private static final String BURP_SETTINGS_KEY = "JsonSettings";
+    private static final String SETTING_VERSION = "AwsigVersion";
     private static final String SETTING_PROFILES = "SerializedProfileList";
     private static final String SETTING_PERSISTENT_PROFILES = "PersistentProfiles";
     private static final String SETTING_EXTENSION_ENABLED = "ExtensionEnabled";
@@ -59,8 +66,16 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     protected static final Color textOrange = new Color(255, 102, 51);
     protected static final Color darkOrange = new Color(226, 73, 33);
 
+    private static BurpExtender burpInstance;
+
+    public static BurpExtender getBurp()
+    {
+        return burpInstance;
+    }
+
     public BurpExtender()
     {
+        this.logger = LogWriter.getLogger();
     }
 
     private void buildUiTab()
@@ -132,7 +147,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         profileButtonPanel.add(importProfileButton);
         profileButtonPanel.add(exportProfileButton);
 
-        final String[] profileColumnNames = {"Name", "KeyId", "SecretKey", "Region", "Service"};
+        final String[] profileColumnNames = {"Name", "KeyId", "Credential Provider", "Region", "Service"};
         profileTable = new JTable(new DefaultTableModel(profileColumnNames, 0)
         {
             @Override
@@ -305,11 +320,16 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
                     AWSProfile profile = profileNameMap.get(name);
                     // build the request
-                    String requestBody = "Version=2010-05-08&Action=GetUser";
+                    String requestBody = "Version=2010-05-08";
                     if (profile.getCredential().isTemporary()) {
-                        // temp creds require a username be specified. use profile name as default, even though this
-                        // doesn't necessarily map to an actual iam username
-                        requestBody += "&UserName="+helpers.urlEncode(profile.getName());
+                        // temp creds require a RoleName be specified. use profile name as default, even though this
+                        // doesn't necessarily map to an actual RoleName
+                        requestBody += "&Action=GetRole";
+                        requestBody += "&RoleName="+helpers.urlEncode(profile.getName());
+                    }
+                    else {
+                        requestBody += "&Action=GetUser";
+                        // optionally add "&UserName="
                     }
                     List<String> headers = new ArrayList<>();
                     headers.add("POST / HTTP/1.1");
@@ -438,13 +458,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public void registerExtenderCallbacks(IBurpExtenderCallbacks callbacks)
     {
+        burpInstance = this;
+
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
 
         callbacks.setExtensionName("SigV4");
         callbacks.registerExtensionStateListener(this);
 
-        this.logger = new LogWriter(callbacks.getStdout(), callbacks.getStderr(), LogWriter.DEFAULT_LEVEL);
+        this.logger.configure(callbacks.getStdout(), callbacks.getStderr(), LogWriter.DEFAULT_LEVEL);
         final String setting = this.callbacks.loadExtensionSetting(SETTING_LOG_LEVEL);
         if (setting != null) {
             this.logger.setLevel(Integer.parseInt(setting));
@@ -474,26 +496,29 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(this.logger.getLevel()));
         this.callbacks.saveExtensionSetting(SETTING_VERSION, AWSIG_VERSION);
 
-        JsonArrayBuilder jsonArrayBuilder = Json.createArrayBuilder();
-        if (this.persistProfilesCheckBox.isSelected()) {
-            for (final String name : this.profileNameMap.keySet()) {
-                jsonArrayBuilder.add(this.profileNameMap.get(name).toJsonObject());
-            }
-        }
-        JsonArray profileArray = jsonArrayBuilder.build();
-        logger.info(String.format("Saved %d profile(s)", profileArray.size()));
+        HashMap<String, Object> settings = new HashMap<>();
+        settings.put(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected());
+        settings.put(SETTING_EXTENSION_ENABLED, this.signingEnabledCheckBox.isSelected());
+        settings.put(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
+        settings.put(SETTING_CUSTOM_HEADERS, getCustomHeadersFromUI());
+        settings.put(SETTING_CUSTOM_HEADERS_OVERWRITE, this.customHeadersOverwriteCheckbox.isSelected());
+        settings.put(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, getAdditionalSignedHeadersFromUI());
+        settings.put(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected());
+        this.callbacks.saveExtensionSetting(BURP_SETTINGS_KEY, new Gson().toJson(settings));
 
-        final String jsonSettings = Json.createObjectBuilder()
-                .add(SETTING_PROFILES, profileArray)
-                .add(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected())
-                .add(SETTING_EXTENSION_ENABLED, this.signingEnabledCheckBox.isSelected())
-                .add(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName())
-                .add(SETTING_CUSTOM_HEADERS, Json.createArrayBuilder(getCustomHeadersFromUI()).build())
-                .add(SETTING_CUSTOM_HEADERS_OVERWRITE, this.customHeadersOverwriteCheckbox.isSelected())
-                .add(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, String.join(",", getAdditionalSignedHeadersFromUI()))
-                .add(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected())
-                .build().toString();
-        this.callbacks.saveExtensionSetting("JsonSettings", jsonSettings);
+        if (this.persistProfilesCheckBox.isSelected()) {
+            Gson gson = new GsonBuilder()
+                    .setPrettyPrinting()
+                    .registerTypeAdapter(AWSCredential.class, new AWSCredentialSerializer())
+                    .registerTypeAdapter(AWSCredentialProvider.class, new AWSCredentialProviderSerializer())
+                    .create();
+            this.callbacks.saveExtensionSetting(SETTING_PROFILES, gson.toJson(this.profileNameMap));
+            logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
+        }
+        else {
+            this.callbacks.saveExtensionSetting(SETTING_PROFILES, "{}");
+        }
+
     }
 
     private void loadExtensionSettings()
@@ -505,36 +530,64 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         else
             logger.info("Found settings for version < 1.2.0");
 
-        final String jsonSettingsString = this.callbacks.loadExtensionSetting("JsonSettings");
+        final String jsonSettingsString = this.callbacks.loadExtensionSetting(BURP_SETTINGS_KEY);
         if (jsonSettingsString == null || jsonSettingsString.equals("")) {
             logger.info("No plugin settings found");
-            return;
         }
+        else {
+            JsonObject settings = new Gson().fromJson(jsonSettingsString, JsonObject.class);
+            if (settings.has(SETTING_DEFAULT_PROFILE_NAME))
+                setDefaultProfileName(settings.get(SETTING_DEFAULT_PROFILE_NAME).getAsString());
+            else
+                setDefaultProfileName(null);
+            if (settings.has(SETTING_DEFAULT_PROFILE_NAME))
+                this.persistProfilesCheckBox.setSelected(settings.get(SETTING_PERSISTENT_PROFILES).getAsBoolean());
+            else
+                this.persistProfilesCheckBox.setSelected(false);
+            if (settings.has(SETTING_EXTENSION_ENABLED))
+                this.signingEnabledCheckBox.setSelected(settings.get(SETTING_EXTENSION_ENABLED).getAsBoolean());
+            else
+                 this.signingEnabledCheckBox.setSelected(true);
 
-        final JsonObject jsonSettings = Json.createReader(new StringReader(jsonSettingsString)).readObject();
-        final JsonArray profileArray = jsonSettings.getJsonArray(SETTING_PROFILES);
-        if (profileArray != null) {
-            for (JsonValue obj : profileArray) {
-                try {
-                    addProfile(AWSProfile.fromJsonObject((JsonObject) obj, this));
-                } catch (IllegalArgumentException exc) {
-                    logger.error("Failed to load saved profile: "+exc.getMessage());
+            if (settings.has(SETTING_CUSTOM_HEADERS)) {
+                List<String> customHeaders = new ArrayList<>();
+                for (final JsonElement header : settings.get(SETTING_CUSTOM_HEADERS).getAsJsonArray()) {
+                    customHeaders.add(header.getAsString());
                 }
+                setCustomHeadersInUI(customHeaders);
             }
-            logger.info(String.format("Loaded %s profile(s)", profileArray.size()));
+
+            if (settings.has(SETTING_CUSTOM_HEADERS_OVERWRITE))
+                this.customHeadersOverwriteCheckbox.setSelected(settings.get(SETTING_CUSTOM_HEADERS_OVERWRITE).getAsBoolean());
+            else
+                this.customHeadersOverwriteCheckbox.setSelected(false);
+            if (settings.has(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES)) {
+                List<String> additionalHeaders = new ArrayList<>();
+                for (JsonElement header : settings.get(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES).getAsJsonArray()) {
+                    additionalHeaders.add(header.getAsString());
+                }
+                this.additionalSignedHeadersField.setText(String.join(", ", additionalHeaders));
+            }
+            if (settings.has(SETTING_IN_SCOPE_ONLY))
+                this.inScopeOnlyCheckBox.setSelected(settings.get(SETTING_IN_SCOPE_ONLY).getAsBoolean());
+            else
+                this.inScopeOnlyCheckBox.setSelected(false);
         }
 
-        setDefaultProfileName(jsonSettings.getString(SETTING_DEFAULT_PROFILE_NAME, null));
-        this.persistProfilesCheckBox.setSelected(jsonSettings.getBoolean(SETTING_PERSISTENT_PROFILES, false));
-        this.signingEnabledCheckBox.setSelected(jsonSettings.getBoolean(SETTING_EXTENSION_ENABLED, true));
-        List<String> customHeaders = new ArrayList<>();
-        for (final JsonValue header : jsonSettings.getJsonArray(SETTING_CUSTOM_HEADERS)) {
-            customHeaders.add(((JsonString)header).getString());
+        //TODO catch exceptions and overwrite invalid settings
+        final String profilesJsonString = this.callbacks.loadExtensionSetting(SETTING_PROFILES);
+        if (profilesJsonString != null && !profilesJsonString.equals("")) {
+            Gson gson = new GsonBuilder()
+                    .registerTypeAdapter(AWSCredential.class, new AWSCredentialSerializer())
+                    .registerTypeAdapter(AWSCredentialProvider.class, new AWSCredentialProviderSerializer())
+                    .create();
+            final Type hashMapType = new TypeToken<HashMap<String, AWSProfile>>(){}.getType();
+            Map<String, AWSProfile> profileMap = gson.fromJson(profilesJsonString, hashMapType);
+            for (final String name : profileMap.keySet()) {
+                addProfile(profileMap.get(name));
+            }
         }
-        setCustomHeadersInUI(customHeaders);
-        this.customHeadersOverwriteCheckbox.setSelected(jsonSettings.getBoolean(SETTING_CUSTOM_HEADERS_OVERWRITE, false));
-        this.additionalSignedHeadersField.setText(jsonSettings.getString(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, ""));
-        this.inScopeOnlyCheckBox.setSelected(jsonSettings.getBoolean(SETTING_IN_SCOPE_ONLY, false));
+
     }
 
     @Override
@@ -653,13 +706,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 }
                                 // if region or service is missing, prompt user. do not re-prompt if values are left blank
                                 if (signedRequest.getService().equals("") || signedRequest.getRegion().equals("")) {
-                                    AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Edit Signature", true, profile, BurpExtender.this);
+                                    AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Add Signature", true, profile, BurpExtender.this);
                                     callbacks.customizeUiComponent(dialog);
-                                    dialog.disableName();
-                                    dialog.disableKeyId();
-                                    dialog.disableSecret();
-                                    dialog.disableToken();
-                                    dialog.disableAssumeRole();
+                                    dialog.disableForEdit();
                                     // set focus to first missing field
                                     if (signedRequest.getRegion().equals("")) {
                                         dialog.regionTextField.requestFocus();
@@ -715,11 +764,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             callbacks.customizeUiComponent(dialog);
                             // disable profile name and secret since they will have to be changed in the top-level plugin tab.
                             // XXX would be nice to have a combobox for the profile here instead of disabling.
-                            dialog.disableName();
-                            dialog.disableKeyId();
-                            dialog.disableSecret();
-                            dialog.disableToken();
-                            dialog.disableAssumeRole();
+                            dialog.disableForEdit();
                             dialog.setVisible(true);
                             if (dialog.getProfile() != null) {
                                 // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.
@@ -765,7 +810,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         for (final String name : profileNames) {
             AWSProfile profile = this.profileNameMap.get(name);
-            model.addRow(new Object[]{profile.getName(), profile.getAccessKeyId(), profile.getSecretKey(), profile.getRegion(), profile.getService()});
+            model.addRow(new Object[]{profile.getName(), profile.getAccessKeyId(), profile.getActiveProvider().getName(), profile.getRegion(), profile.getService()});
             defaultProfileComboBox.addItem(name);
         }
         setDefaultProfileName(defaultProfileName);
@@ -915,7 +960,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private List<String> getAdditionalSignedHeadersFromUI()
     {
-        return Arrays.asList(additionalSignedHeadersField.getText().split(",+"));
+        return Arrays.asList(additionalSignedHeadersField.getText().split(",+"))
+                .stream()
+                .map(h -> h.trim())
+                .collect(Collectors.toList());
     }
 
     /* get the additional headers specified in the UI */
@@ -954,7 +1002,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     {
         AWSProfile profile = null;
 
-        // check if the "X-BurpAwsig-Profile: PROFILE" was used to specify a profile
+        // check if the "X-BurpAwsig-Profile: PROFILE" header was used to specify a profile
         if (getDefaultProfileName() == NO_DEFAULT_PROFILE) {
             // no default profile is used, which would have precedence
             final String profileHeader = signedRequest.getProfileHeaderValue();
