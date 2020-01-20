@@ -148,7 +148,7 @@ public class AWSSignedRequest
 
     public AWSProfile getAnonymousProfile()
     {
-        return new AWSProfile.Builder("AnonymousProfile", this.accessKeyId, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        return new AWSProfile.Builder("AnonymousProfile", this.accessKeyId)
                 .withRegion(this.region)
                 .withService(this.service)
                 .build();
@@ -405,6 +405,7 @@ public class AWSSignedRequest
                 logger.error("Invalid request path encountered during canonicalization: "+uri);
             }
             //NOTE: burp will encode to lowercase hex
+            //TODO replace + with %20?
             uri = this.helpers.urlEncode(uri);
         }
         if (uri.equals("")) {
@@ -666,8 +667,8 @@ public class AWSSignedRequest
         this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Expires", Integer.toString(expires), IParameter.PARAM_URL));
 
         // NOTE: whether or not this is part of the signature may be service dependent
-        if (credential.getSessionToken() != null) {
-            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Security-Token", credential.getSessionToken(), IParameter.PARAM_URL));
+        if (credential.isTemporary()) {
+            this.requestBytes = helpers.addParameter(this.requestBytes, helpers.buildParameter("X-Amz-Security-Token", ((AWSTemporaryCredential) credential).getSessionToken(), IParameter.PARAM_URL));
         }
 
         // save signed headers and signature for last, after all other params have been updated.
@@ -742,8 +743,8 @@ public class AWSSignedRequest
                     headers.set(i, String.format("Content-MD5: %s", getContentMD5()));
                 }
                 else if (nameLower.startsWith("x-amz-security-token:")) {
-                    if (credential.getSessionToken() != null) {
-                        headers.set(i, String.format("X-Amz-Security-Token: %s", credential.getSessionToken()));
+                    if (credential.isTemporary()) {
+                        headers.set(i, String.format("X-Amz-Security-Token: %s", ((AWSTemporaryCredential) credential).getSessionToken()));
                         sessionTokenUpdated = true;
                     }
                 }
@@ -758,8 +759,8 @@ public class AWSSignedRequest
             }
 
             // NOTE: whether or not this is part of the signature may be service dependent
-            if (!sessionTokenUpdated && credential.getSessionToken() != null) {
-                headers.add(String.format("X-Amz-Security-Token: %s", credential.getSessionToken()));
+            if (!sessionTokenUpdated && credential.isTemporary()) {
+                headers.add(String.format("X-Amz-Security-Token: %s", ((AWSTemporaryCredential) credential).getSessionToken()));
             }
 
             // save Authorization header for last since it is dependent on other headers which may have changed.

@@ -16,6 +16,20 @@ public class LogWriter
     private PrintWriter err;
     private int logLevel;
 
+    private static LogWriter logWriter;
+
+    private LogWriter()
+    {
+        this.logLevel = NULL_LEVEL;
+    }
+
+    public static LogWriter getLogger()
+    {
+        if (logWriter == null)
+            logWriter = new LogWriter();
+        return logWriter;
+    }
+
     public static String levelNameFromInt(final int level)
     {
         switch (level) {
@@ -31,19 +45,12 @@ public class LogWriter
         return "*INVALID*";
     }
 
-    public LogWriter(OutputStream outStream, OutputStream errStream, int logLevel)
+    public void configure(OutputStream outStream, OutputStream errStream, int logLevel)
     {
         this.out = new PrintWriter(outStream, true);
         this.err = new PrintWriter(errStream, true);
         this.logLevel = logLevel;
     }
-
-    public LogWriter()
-    {
-        this.logLevel = NULL_LEVEL;
-    }
-
-    public PrintWriter getPrintWriter() { return this.out; }
 
     public void setLevel(int level) { this.logLevel = level; }
 
