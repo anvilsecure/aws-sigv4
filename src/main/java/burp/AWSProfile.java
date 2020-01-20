@@ -192,7 +192,7 @@ public class AWSProfile implements Cloneable
         if (envAccessKeyId != null) {
             final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
             if (envSecretKey != null) {
-                AWSProfile.Builder builder = new AWSProfile.Builder("ENV", "ENVIRONMENT_KEYID");
+                AWSProfile.Builder builder = new AWSProfile.Builder("ENV", envAccessKeyId);
                 if (System.getenv("AWS_DEFAULT_REGION") != null) {
                     builder.withRegion(System.getenv("AWS_DEFAULT_REGION"));
                 }

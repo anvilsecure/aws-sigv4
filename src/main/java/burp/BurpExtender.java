@@ -47,7 +47,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     protected IBurpExtenderCallbacks callbacks;
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, AWSProfile> profileNameMap; // map name to profile
-    protected LogWriter logger;
+    protected LogWriter logger = LogWriter.getLogger();
 
     private JLabel statusLabel;
     private JCheckBox signingEnabledCheckBox;
@@ -73,10 +73,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return burpInstance;
     }
 
-    public BurpExtender()
-    {
-        this.logger = LogWriter.getLogger();
-    }
+    public BurpExtender() {}
 
     private void buildUiTab()
     {

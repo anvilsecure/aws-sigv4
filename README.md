@@ -73,8 +73,8 @@ will be expected in 1 of 2 formats:
 
 ```json
 {
-    "AccessKeyId": "",
-    "SecretAccessKey": ""
+    "AccessKeyId": "<string>",
+    "SecretAccessKey": "<string>"
 }
 ```
 
@@ -82,10 +82,10 @@ or
 
 ```json
 {
-    "AccessKeyId": "",
-    "SecretAccessKey": "",
-    "SessionToken": "",
-    "Expiration": ""
+    "AccessKeyId": "<string>",
+    "SecretAccessKey": "<string>",
+    "SessionToken": "<string>",
+    "Expiration": "<int>"
 }
 ```
 
@@ -109,8 +109,12 @@ If using the aws cli, set AWS_CA_BUNDLE to the path of your burp certificate (in
 
 UI tab
 
-![UI](docs/screenshots/ui-example-sm.png)
+![UI](docs/screenshots/ui-example.png)
 
 Importing profiles
 
-![Importing Profiles](docs/screenshots/import-profiles-sm.png)
+![Importing Profiles](docs/screenshots/import-profiles.png)
+
+Editing a profile
+
+![Importing Profiles](docs/screenshots/profile-editor.png)
