@@ -282,7 +282,6 @@ public class AWSProfile implements Cloneable
 
     private String getExportString()
     {
-        //TODO AssumeRole permanentCredential may differ from static provider creds
         String export = "";
         AWSCredentialProvider provider = getStaticCredentialProvider();
         if (provider != null) {

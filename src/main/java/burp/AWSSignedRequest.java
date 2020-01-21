@@ -142,19 +142,23 @@ public class AWSSignedRequest
         if (!profile.getRegion().equals("")) {
             this.setRegion(profile.getRegion());
         }
-        // this is a NOP unless using a default profile
         //TODO not necessary? maybe profile.getCredential().getAccessKeyId().
         // this gets overwritten when the request is signed anyways...
-        //this.setAccessKeyId(profile.getAccessKeyId());
+        if (profile.getAccessKeyId() != null)
+            this.setAccessKeyId(profile.getAccessKeyId());
     }
 
     public AWSProfile getAnonymousProfile()
     {
-        return new AWSProfile.Builder("AnonymousProfile")
-                .withAccessKeyId(this.accessKeyId)
+        AWSProfile.Builder builder = new AWSProfile.Builder("AnonymousProfile")
                 .withRegion(this.region)
-                .withService(this.service)
-                .build();
+                .withService(this.service);
+        try {
+            builder.withAccessKeyId(this.accessKeyId);
+        } catch (IllegalArgumentException exc) {
+            // in this case, the signature accessKeyId was likely removed but the request is still fingerprinted as SigV4
+        }
+        return builder.build();
     }
 
     public static AWSSignedRequest fromUnsignedRequest(final IHttpRequestResponse messageInfo, final AWSProfile profile, BurpExtender burp)
