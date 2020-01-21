@@ -23,7 +23,7 @@ public class AWSSignedRequest
 {
     // if present, choose a profile based on this header
     //   X-BurpAwsig-Profile: default
-    private static final String PROFILE_HEADER_NAME = "x-burpawsig-profile";
+    public static final String PROFILE_HEADER_NAME = "x-burpawsig-profile";
     // set of headers to remove and update
     private HashSet<String> updateHeaderSet = new HashSet<>(Arrays.asList(
             "x-amz-credential", "x-amz-date", "x-amz-algorithm", "x-amz-expires", "x-amz-signedheaders", "x-amz-signature", "x-amz-content-sha256", "x-amz-security-token"
@@ -493,7 +493,7 @@ public class AWSSignedRequest
         return String.join(";", signedHeaderList);
     }
 
-    private byte[] getPayloadBytes()
+    protected byte[] getPayloadBytes()
     {
         if (getPayloadSize() > 0) {
             return Arrays.copyOfRange(this.requestBytes, this.request.getBodyOffset(), this.requestBytes.length);
