@@ -1,9 +1,6 @@
 package burp;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 
 import javax.swing.*;
@@ -567,7 +564,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 this.inScopeOnlyCheckBox.setSelected(false);
         }
 
-        //TODO catch exceptions and overwrite invalid settings
         final String profilesJsonString = this.callbacks.loadExtensionSetting(SETTING_PROFILES);
         if (profilesJsonString != null && !profilesJsonString.equals("")) {
             Gson gson = new GsonBuilder()
@@ -575,9 +571,21 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     .registerTypeAdapter(AWSCredentialProvider.class, new AWSCredentialProviderSerializer())
                     .create();
             final Type hashMapType = new TypeToken<HashMap<String, AWSProfile>>(){}.getType();
-            Map<String, AWSProfile> profileMap = gson.fromJson(profilesJsonString, hashMapType);
+            Map<String, AWSProfile> profileMap;
+            try {
+                profileMap = gson.fromJson(profilesJsonString, hashMapType);
+            } catch (JsonParseException exc) {
+                logger.error("Failed to parse profile JSON");
+                // overwrite invalid settings
+                this.callbacks.saveExtensionSetting(SETTING_PROFILES, "{}");
+                profileMap = new HashMap<>();
+            }
             for (final String name : profileMap.keySet()) {
-                addProfile(profileMap.get(name));
+                try {
+                    addProfile(profileMap.get(name));
+                } catch (IllegalArgumentException exc) {
+                    logger.error("Failed to add profile: "+name);
+                }
             }
         }
 
@@ -798,47 +806,49 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         defaultProfileComboBox.removeAllItems();
         defaultProfileComboBox.addItem(NO_DEFAULT_PROFILE);
 
-        // sort by name in table
-        List<String> profileNames = getSortedProfileNames();
-
-        for (final String name : profileNames) {
+        for (final String name : getSortedProfileNames()) {
             AWSProfile profile = this.profileNameMap.get(name);
-            model.addRow(new Object[]{profile.getName(), profile.getAccessKeyId(), profile.getActiveProvider().getName(), profile.getRegion(), profile.getService()});
+            model.addRow(new Object[]{profile.getName(), profile.getAccessKeyIdForProfileSelection(), profile.getActiveProvider().getName(), profile.getRegion(), profile.getService()});
             defaultProfileComboBox.addItem(name);
         }
         setDefaultProfileName(defaultProfileName);
     }
 
-
-    protected void addProfile(AWSProfile profile)
+    /*
+    NOTE: this will overwrite an existing profile with the same name
+    */
+    protected void addProfile(final AWSProfile profile)
     {
-        // NOTE: validation check (via profile.isValid) is intentionally omitted here. This is so users can
-        // deliberately specify invalid values for testing purposes.
-        if (profile.getName().length() > 0) {
-            AWSProfile p1 = this.profileNameMap.get(profile.getName());
-            AWSProfile p2 = this.profileKeyIdMap.get(profile.getAccessKeyId());
-            if ((p2 != null) && (p1 == null)) {
-                updateStatus("Profiles must have a unique accessKeyId");
-                throw new IllegalArgumentException("Profiles must have a unique accessKeyId");
-            }
-            // for accessKeyId updates, clean up the old id
-            if (p1 != null) {
-                if (this.profileKeyIdMap.containsKey(p1.getAccessKeyId())) {
-                    this.profileKeyIdMap.remove(p1.getAccessKeyId());
+        final AWSProfile p1 = this.profileNameMap.get(profile.getName());
+        if (p1 == null) {
+            // profile name doesn't exist. make sure there is no keyId conflict with an existing profile
+            if (profile.getAccessKeyIdForProfileSelection() != null) {
+                AWSProfile p2 = this.profileKeyIdMap.get(profile.getAccessKeyIdForProfileSelection());
+                if (p2 != null) {
+                    // keyId conflict. do not add profile
+                    updateStatus("Profiles must have a unique accessKeyId: "+profile.getName());
+                    throw new IllegalArgumentException(String.format("Profiles must have a unique accessKeyId: %s = %s", profile.getName(), p2.getName()));
                 }
             }
-            this.profileKeyIdMap.put(profile.getAccessKeyId(), profile);
-            this.profileNameMap.put(profile.getName(), profile);
-            updateAwsProfilesUI();
-            if (p1 == null) {
-                updateStatus("Added profile: " + profile.getName());
-            }
-            else {
-                updateStatus("Saved profile: " + profile.getName());
-            }
-            return;
         }
-        throw new IllegalArgumentException("AWSProfile name must not be blank");
+
+        this.profileNameMap.put(profile.getName(), profile);
+
+        // refresh the keyId map
+        this.profileKeyIdMap.clear();
+        for (final AWSProfile p : this.profileNameMap.values()) {
+            if (p.getAccessKeyIdForProfileSelection() != null) {
+                this.profileKeyIdMap.put(p.getAccessKeyIdForProfileSelection(), p);
+            }
+        }
+
+        updateAwsProfilesUI();
+        if (p1 == null) {
+            updateStatus("Added profile: " + profile.getName());
+        }
+        else {
+            updateStatus("Saved profile: " + profile.getName());
+        }
     }
 
     /*
@@ -850,13 +860,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             addProfile(newProfile);
             return;
         }
-        if (newProfile.getName().length() == 0) {
-            throw new IllegalArgumentException("AWSProfile name must not be blank");
-        }
+
         // remove any profile with same name
-        AWSProfile p1 = this.profileNameMap.get(oldProfile.getName());
-        AWSProfile p2 = this.profileKeyIdMap.get(oldProfile.getAccessKeyId());
-        if ((p1 == null) || (p2 == null)) {
+        final AWSProfile p1 = this.profileNameMap.get(oldProfile.getName());
+        if (p1 == null) {
             updateStatus("Update profile failed. Old profile doesn't exist.");
             throw new IllegalArgumentException("Update profile failed. Old profile doesn't exist.");
         }
@@ -869,14 +876,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
     }
 
-
-    protected void deleteProfile(AWSProfile profile)
+    private void deleteProfile(AWSProfile profile)
     {
         if (this.profileNameMap.containsKey(profile.getName())) {
+            this.profileNameMap.remove(profile.getName());
             updateStatus(String.format("Deleted profile '%s'", profile.getName()));
         }
-        this.profileKeyIdMap.remove(profile.getAccessKeyId());
-        this.profileNameMap.remove(profile.getName());
+        if (profile.getAccessKeyIdForProfileSelection() != null) {
+            this.profileKeyIdMap.remove(profile.getAccessKeyIdForProfileSelection());
+        }
         updateAwsProfilesUI();
     }
 
