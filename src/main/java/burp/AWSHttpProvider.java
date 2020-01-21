@@ -3,6 +3,7 @@ package burp;
 import burp.error.AWSCredentialProviderException;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
@@ -121,8 +122,8 @@ public class AWSHttpProvider implements AWSCredentialProvider
         HttpResponse<String> httpResponse;
         try {
             httpResponse = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
-        } catch (InterruptedException | IOException exc) {
-            //TODO determine if ssl error
+        }
+        catch (InterruptedException | IOException exc) {
             burp.logger.error("HttpGet failed: "+exc.getMessage());
             throw new AWSCredentialProviderException("Failed to send GET request to "+requestUrl);
         }
@@ -130,10 +131,9 @@ public class AWSHttpProvider implements AWSCredentialProvider
         if (httpResponse.statusCode() != 200)
             throw new AWSCredentialProviderException(String.format("GET request returned error: %d %s", httpResponse.statusCode(), requestUrl));
 
-        // expect similar object to sts:AssumeRole
-        JsonObject credentialObject = new Gson().fromJson(httpResponse.body(), JsonObject.class);
-
         try {
+            // expect similar object to sts:AssumeRole
+            JsonObject credentialObject = new Gson().fromJson(httpResponse.body(), JsonObject.class);
             if (credentialObject.has("SessionToken")) {
                 credential = new AWSTemporaryCredential(
                         credentialObject.get("AccessKeyId").getAsString(),
@@ -145,7 +145,7 @@ public class AWSHttpProvider implements AWSCredentialProvider
                         credentialObject.get("AccessKeyId").getAsString(),
                         credentialObject.get("SecretAccessKey").getAsString());
             }
-        } catch (NullPointerException exc) {
+        } catch (JsonParseException | NullPointerException exc) {
             throw new AWSCredentialProviderException("Failed to parse HttpProvider response");
         }
     }

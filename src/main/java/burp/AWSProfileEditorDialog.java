@@ -40,6 +40,10 @@ public class AWSProfileEditorDialog extends JDialog
     private JTextField httpProviderCaPathField;
 
     private JLabel statusLabel;
+    private String newProfileName = null;
+
+    // allow creator of dialog to get the profile that was created
+    public String getNewProfileName() { return newProfileName; }
 
     private static GridBagConstraints newConstraint(int gridx, int gridy, int gridwidth, int gridheight)
     {
@@ -264,6 +268,7 @@ public class AWSProfileEditorDialog extends JDialog
                         throw new IllegalArgumentException("Must provide at least 1 authentication method");
                     }
                     burp.updateProfile(profile, newProfile);
+                    newProfileName = newProfile.getName();
                     setVisible(false);
                     dispose();
                 } catch (IllegalArgumentException exc) {
@@ -378,6 +383,9 @@ class JTextFieldHint extends JTextField implements FocusListener
     public void setText(final String text) {
         if (!text.equals("")) {
             setUserText(text);
+        }
+        else {
+            setHintText();
         }
     }
 

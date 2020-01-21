@@ -2,6 +2,8 @@ package burp;
 
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonWriter;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -10,6 +12,7 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.IOException;
 import java.lang.reflect.Type;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -42,7 +45,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     protected IExtensionHelpers helpers;
     protected IBurpExtenderCallbacks callbacks;
-    //TODO remove requirement for profiles to have a keyId
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, AWSProfile> profileNameMap; // map name to profile
     protected LogWriter logger = LogWriter.getLogger();
@@ -481,6 +483,32 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         });
     }
 
+    /*
+    build Gson object for de/serialization of settings. AWSCredential, AWSCredentialProvider, and Path need
+    to be handled as a special case since they're interfaces.
+     */
+    private Gson getGsonSerializer()
+    {
+        return new GsonBuilder()
+                .registerTypeAdapter(AWSCredential.class, new AWSCredentialSerializer())
+                .registerTypeAdapter(AWSCredentialProvider.class, new AWSCredentialProviderSerializer())
+                .registerTypeHierarchyAdapter(Path.class, new TypeAdapter<Path>() {
+                    @Override
+                    public void write(JsonWriter out, Path value) throws IOException {
+                        if (value == null)
+                            out.nullValue();
+                        else
+                            out.value(value.toString());
+                    }
+
+                    @Override
+                    public Path read(JsonReader in) throws IOException {
+                        return Paths.get(in.nextString());
+                    }
+                })
+                .create();
+    }
+
     private void saveExtensionSettings()
     {
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(this.logger.getLevel()));
@@ -497,11 +525,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.callbacks.saveExtensionSetting(BURP_SETTINGS_KEY, new Gson().toJson(settings));
 
         if (this.persistProfilesCheckBox.isSelected()) {
-            Gson gson = new GsonBuilder()
-                    .setPrettyPrinting()
-                    .registerTypeAdapter(AWSCredential.class, new AWSCredentialSerializer())
-                    .registerTypeAdapter(AWSCredentialProvider.class, new AWSCredentialProviderSerializer())
-                    .create();
+            Gson gson = getGsonSerializer();
             this.callbacks.saveExtensionSetting(SETTING_PROFILES, gson.toJson(this.profileNameMap));
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
         }
@@ -566,10 +590,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         final String profilesJsonString = this.callbacks.loadExtensionSetting(SETTING_PROFILES);
         if (profilesJsonString != null && !profilesJsonString.equals("")) {
-            Gson gson = new GsonBuilder()
-                    .registerTypeAdapter(AWSCredential.class, new AWSCredentialSerializer())
-                    .registerTypeAdapter(AWSCredentialProvider.class, new AWSCredentialProviderSerializer())
-                    .create();
+            Gson gson = getGsonSerializer();
             final Type hashMapType = new TypeToken<HashMap<String, AWSProfile>>(){}.getType();
             Map<String, AWSProfile> profileMap;
             try {
@@ -744,16 +765,18 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             if (savedProfile == null) {
                                 // if existing profile doesn't exist with this key id, create one and apply it
                                 AWSProfileEditorDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null, BurpExtender.this);
-                                dialog.applyProfile(sigProfile); // auto fill fields gathered from original request
+                                dialog.applyProfile(sigProfile); // auto fill fields gathered from original request. fails if auth header is invalid
                                 dialog.nameTextField.setText(""); // overwrite garbage value used to pass validation
-                                dialog.secretKeyTextField.setText(""); // overwrite garbage value used to pass validation
                                 callbacks.customizeUiComponent(dialog);
                                 dialog.setVisible(true);
-                                final AWSProfile newProfile = customizeSignedRequest(signedRequest);
-                                if (newProfile != null) {
-                                    signedRequest.applyProfile(newProfile);
-                                    messages[0].setRequest(signedRequest.getSignedRequestBytes(newProfile.getCredential()));
-                                } // else... XXX maybe display an error dialog here
+                                final String newProfileName = dialog.getNewProfileName();
+                                if (newProfileName != null) {
+                                    final AWSProfile newProfile = profileNameMap.get(newProfileName);
+                                    if (newProfile != null) {
+                                        signedRequest.applyProfile(newProfile);
+                                        messages[0].setRequest(signedRequest.getSignedRequestBytes(newProfile.getCredential()));
+                                    } // else... XXX maybe display an error dialog here
+                                }
                                 return;
                             }
                             AWSProfile editedProfile = new AWSProfile.Builder(savedProfile) // get profile as saved by the accessKey
