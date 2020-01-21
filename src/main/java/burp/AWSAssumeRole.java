@@ -217,7 +217,7 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
                 burp.helpers.buildHttpService(AWS_STS_HOSTNAME, 443, true),
                 burp.helpers.buildHttpMessage(headers, body),
                 burp);
-        AWSProfile stsProfile = new AWSProfile.Builder("sts-temp", "STS_ASSUME_ROLE_KEYID")
+        AWSProfile stsProfile = new AWSProfile.Builder("sts-temp")
                 .withCredentialProvider(new AWSStaticCredentialProvider(permanentCredential), 0)
                 .withService(AWS_STS_SIGNAME)
                 .withRegion(AWS_STS_REGION)

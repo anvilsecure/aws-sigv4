@@ -28,12 +28,14 @@ class NewAWSProfile
 
 public class AWSProfileImportDialog extends JDialog
 {
-    private BurpExtender burp;
-    private JTable profileTable;
-    private HashMap<String, NewAWSProfile> profileNameMap;
     private static int SELECT_COLUMN_INDEX = 0;
     private static int NAME_COLUMN_INDEX = 1;
     private static int KEYID_COLUMN_INDEX = 2;
+
+    private BurpExtender burp;
+    private JTable profileTable;
+    private JLabel hintLabel;
+    private HashMap<String, NewAWSProfile> profileNameMap;
 
     public AWSProfileImportDialog(Frame owner, String title, boolean modal, BurpExtender burp)
     {
@@ -155,7 +157,12 @@ public class AWSProfileImportDialog extends JDialog
         okButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
-                addSelectedProfiles();
+                try {
+                    addSelectedProfiles();
+                } catch (IllegalArgumentException exc) {
+                    hintLabel.setText(String.format("<html><i>%s</i></html>", exc.getMessage().replace("<", "&lt;").replace(">", "&gt;")));
+                    return;
+                }
                 setVisible(false);
                 dispose();
             }
@@ -178,7 +185,7 @@ public class AWSProfileImportDialog extends JDialog
         c02.gridy = 2;
         GridBagConstraints c03 = new GridBagConstraints();
         c03.gridy = 3;
-        JLabel hintLabel = new JLabel("<html><i>Ok to import selected profiles</i></html>");
+        hintLabel = new JLabel("<html><i>Ok to import selected profiles</i></html>");
         hintLabel.setForeground(this.burp.textOrange);
         outerPanel.add(topButtonPanel, c00);
         outerPanel.add(profileScrollPane, c01);
@@ -226,7 +233,7 @@ public class AWSProfileImportDialog extends JDialog
 
         for (final String name : profileNames) {
             NewAWSProfile newProfile = this.profileNameMap.get(name);
-            model.addRow(new Object[]{selectionMap.get(name), newProfile.awsProfile.getName(), newProfile.awsProfile.getAccessKeyId(), newProfile.source});
+            model.addRow(new Object[]{selectionMap.get(name), newProfile.awsProfile.getName(), newProfile.awsProfile.getAccessKeyIdForProfileSelection(), newProfile.source});
         }
     }
 

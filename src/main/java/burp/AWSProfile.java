@@ -100,7 +100,24 @@ public class AWSProfile implements Cloneable
 
     public String getRegion() { return this.region; }
     public String getService() { return this.service; }
+
+    // NOTE that this value is used for matching incoming requests only and DOES NOT represent the accessKeyId
+    // used to sign the request
     public String getAccessKeyId() { return this.accessKeyId; }
+
+    /*
+    get the signature accessKeyId that should be used for selecting this profile
+     */
+    public String getAccessKeyIdForProfileSelection()
+    {
+        if (getAccessKeyId() != null) {
+            return getAccessKeyId();
+        }
+        if (getStaticCredentialProvider() != null) {
+            return getStaticCredentialProvider().getCredential().getAccessKeyId();
+        }
+        return null;
+    }
 
     private void setName(final String name) {
         if (profileNamePattern.matcher(name).matches())
@@ -140,11 +157,15 @@ public class AWSProfile implements Cloneable
 
     public static class Builder {
         private AWSProfile profile;
-        public Builder(final String name, final String accessKeyId) {
-            this.profile = new AWSProfile(name, accessKeyId);
+        public Builder(final String name) {
+            this.profile = new AWSProfile(name);
         }
         public Builder(final AWSProfile profile) {
             this.profile = profile.clone();
+        }
+        public Builder withAccessKeyId(final String accessKeyId) {
+            this.profile.setAccessKeyId(accessKeyId);
+            return this;
         }
         public Builder withRegion(final String region) {
             this.profile.setRegion(region);
@@ -165,7 +186,7 @@ public class AWSProfile implements Cloneable
     }
 
     public AWSProfile clone() {
-        AWSProfile.Builder builder = new AWSProfile.Builder(this.name, this.accessKeyId)
+        AWSProfile.Builder builder = new AWSProfile.Builder(this.name)
                 .withRegion(this.region)
                 .withService(this.service);
         for (AWSCredentialProvider provider : this.credentialProviders.values()) {
@@ -176,10 +197,10 @@ public class AWSProfile implements Cloneable
 
     private AWSProfile() {};
 
-    private AWSProfile(final String name, final String accessKeyId)
+    private AWSProfile(final String name)
     {
         setName(name);
-        setAccessKeyId(accessKeyId);
+        this.accessKeyId = null;
         this.credentialProviders = new HashMap<>();
         this.credentialProvidersPriority = new HashMap<>();
         this.region = "";
@@ -192,7 +213,8 @@ public class AWSProfile implements Cloneable
         if (envAccessKeyId != null) {
             final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
             if (envSecretKey != null) {
-                AWSProfile.Builder builder = new AWSProfile.Builder("ENV", envAccessKeyId);
+                AWSProfile.Builder builder = new AWSProfile.Builder("ENV");
+                builder.withAccessKeyId(envAccessKeyId);
                 if (System.getenv("AWS_DEFAULT_REGION") != null) {
                     builder.withRegion(System.getenv("AWS_DEFAULT_REGION"));
                 }
@@ -233,7 +255,8 @@ public class AWSProfile implements Cloneable
             if (section.containsKey("aws_access_key_id") && section.containsKey("aws_secret_access_key")) {
                 HashMap<String, String> profile = config.getOrDefault("profile " + name, new HashMap<>());
                 final String region = profile.getOrDefault("region", section.getOrDefault("region", ""));
-                AWSProfile.Builder newProfileBuilder = new AWSProfile.Builder(name, section.get("aws_access_key_id"))
+                AWSProfile.Builder newProfileBuilder = new AWSProfile.Builder(name)
+                        .withAccessKeyId(section.get("aws_access_key_id"))
                         .withRegion(region)
                         .withService("");
                 try {

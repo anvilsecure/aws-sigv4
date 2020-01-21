@@ -143,12 +143,15 @@ public class AWSSignedRequest
             this.setRegion(profile.getRegion());
         }
         // this is a NOP unless using a default profile
-        this.setAccessKeyId(profile.getAccessKeyId());
+        //TODO not necessary? maybe profile.getCredential().getAccessKeyId().
+        // this gets overwritten when the request is signed anyways...
+        //this.setAccessKeyId(profile.getAccessKeyId());
     }
 
     public AWSProfile getAnonymousProfile()
     {
-        return new AWSProfile.Builder("AnonymousProfile", this.accessKeyId)
+        return new AWSProfile.Builder("AnonymousProfile")
+                .withAccessKeyId(this.accessKeyId)
                 .withRegion(this.region)
                 .withService(this.service)
                 .build();
