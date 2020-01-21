@@ -90,7 +90,7 @@ public class AWSProfileEditorDialog extends JDialog
         this.nameTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Required");
         basicPanel.add(nameTextField, newConstraint(1, 0));
         basicPanel.add(new JLabel("KeyId"), newConstraint(0, 1, GridBagConstraints.LINE_START));
-        this.profileKeyIdTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Required");
+        this.profileKeyIdTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Required - Match with AccessKeyId in incoming requests");
         this.profileKeyIdTextField.setToolTipText("Look for this AccessKeyId in a request to automatically select this profile");
         basicPanel.add(profileKeyIdTextField, newConstraint(1, 1));
         basicPanel.add(new JLabel("Region"), newConstraint(0, 2, GridBagConstraints.LINE_START));

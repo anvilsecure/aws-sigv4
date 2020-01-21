@@ -37,14 +37,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String SETTING_ADDITIONAL_SIGNED_HEADER_NAMES = "AdditionalSignedHeaderNames";
     private static final String SETTING_IN_SCOPE_ONLY = "InScopeOnly";
 
-    private static final String AWS_IAM_HOSTNAME = "iam.amazonaws.com";
-    private static final String AWS_IAM_REGION = "us-east-1";
-    private static final String AWS_IAM_SIGNAME = "iam";
+    private static final String AWS_STS_HOSTNAME = "sts.amazonaws.com";
+    private static final String AWS_STS_REGION = "us-east-1";
+    private static final String AWS_STS_SIGNAME = "sts";
 
     private static final String NO_DEFAULT_PROFILE = "";
 
     protected IExtensionHelpers helpers;
     protected IBurpExtenderCallbacks callbacks;
+    //TODO remove requirement for profiles to have a keyId
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, AWSProfile> profileNameMap; // map name to profile
     protected LogWriter logger = LogWriter.getLogger();
@@ -187,7 +188,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         final String[] headersColumnNames = {"Name", "Value"};
         customHeadersTable = new JTable(new DefaultTableModel(headersColumnNames, 0));
         JScrollPane headersScrollPane = new JScrollPane(customHeadersTable);
-        headersScrollPane.setPreferredSize(new Dimension(1000, 200));
+        headersScrollPane.setPreferredSize(new Dimension(1000, 150));
 
         GridBagConstraints c100 = new GridBagConstraints(); c100.gridy = 0; c100.gridwidth = 2; c100.anchor = GridBagConstraints.FIRST_LINE_START;
         GridBagConstraints c101 = new GridBagConstraints(); c101.gridy = 1; c101.gridwidth = 2; c101.anchor = GridBagConstraints.FIRST_LINE_START; c101.insets = new Insets(10, 0, 10, 0);
@@ -303,47 +304,42 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                // build a signed request to IAM GetUser API to test the credentials and send it to repeater
+                // build a signed request to STS GetCallerIdentity API to test the credentials and send it to repeater
                 // Notes
                 //   * this request will be subject to any modifications specified in the plugin
                 //   * if profile has a region set, it will override the region set here
-                //     - temp fix is to check "In-scope Only" and ensure AWS_IAM_HOSTNAME is not in scope
-                //   * this currently won't change the default profile if it's set which could be confusing
-                //   * for temp creds, this will insert a temporary keyId which likely wont be part of a profile.
-                //     therefore the request will not be able to be re-signed unless the keyId is updated.
+                //     - temp fix is to check "In-scope Only" and ensure AWS_STS_HOSTNAME is not in scope
+                //   * this inserts a header to force the use of the specified profile so it isn't overridden by the default profile
                 int[] rowIndeces = profileTable.getSelectedRows();
                 DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                 if (rowIndeces.length == 1) {
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
                     AWSProfile profile = profileNameMap.get(name);
                     // build the request
-                    String requestBody = "Version=2010-05-08";
-                    if (profile.getCredential().isTemporary()) {
-                        // temp creds require a RoleName be specified. use profile name as default, even though this
-                        // doesn't necessarily map to an actual RoleName
-                        requestBody += "&Action=GetRole";
-                        requestBody += "&RoleName="+helpers.urlEncode(profile.getName());
-                    }
-                    else {
-                        requestBody += "&Action=GetUser";
-                        // optionally add "&UserName="
-                    }
+                    final String requestBody = "Version=2011-06-15&Action=GetCallerIdentity";
                     List<String> headers = new ArrayList<>();
                     headers.add("POST / HTTP/1.1");
-                    headers.add("Host: "+AWS_IAM_HOSTNAME);
+                    headers.add("Host: "+AWS_STS_HOSTNAME);
                     headers.add("Content-Type: application/x-www-form-urlencoded; charset=utf-8");
-                    IHttpService httpService = helpers.buildHttpService(AWS_IAM_HOSTNAME, 443, true);
+                    IHttpService httpService = helpers.buildHttpService(AWS_STS_HOSTNAME, 443, true);
                     AWSSignedRequest signedRequest = new AWSSignedRequest(
                             httpService,
                             helpers.buildHttpMessage(headers, helpers.stringToBytes(requestBody)),
                             BurpExtender.this);
                     signedRequest.applyProfile(profile);
-                    signedRequest.setRegion(AWS_IAM_REGION);
-                    signedRequest.setService(AWS_IAM_SIGNAME);
+                    signedRequest.setRegion(AWS_STS_REGION);
+                    signedRequest.setService(AWS_STS_SIGNAME);
+
+                    // Rebuild signed request bytes with the profile header. this is required since this header gets stripped
+                    // after the request is signed. this header will ensure the message is signed with the correct profile
+                    final byte[] signedRequestBytes = signedRequest.getSignedRequestBytes(profile.getCredential());
+                    headers = helpers.analyzeRequest(signedRequestBytes).getHeaders();
+                    headers.add(String.format("%s: %s", AWSSignedRequest.PROFILE_HEADER_NAME, profile.getName()));
+
                     callbacks.sendToRepeater(httpService.getHost(),
                             httpService.getPort(),
                             true /* useHttps */,
-                            signedRequest.getSignedRequestBytes(profile.getCredential()),
+                            helpers.buildHttpMessage(headers, signedRequest.getPayloadBytes()),
                             profile.getName());
                 }
                 else {
@@ -1000,17 +996,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         AWSProfile profile = null;
 
         // check if the "X-BurpAwsig-Profile: PROFILE" header was used to specify a profile
-        if (getDefaultProfileName() == NO_DEFAULT_PROFILE) {
-            // no default profile is used, which would have precedence
-            final String profileHeader = signedRequest.getProfileHeaderValue();
-            if (profileHeader != null) {
-                profile = this.profileNameMap.get(profileHeader);
-                if (profile != null) {
-                    logger.debug("Using profile from header: "+profile.getName());
-                }
-                else {
-                    logger.debug("Profile from header not found: "+profileHeader);
-                }
+        final String profileHeader = signedRequest.getProfileHeaderValue();
+        if (profileHeader != null) {
+            profile = this.profileNameMap.get(profileHeader);
+            if (profile != null) {
+                logger.debug("Using profile from header: "+profile.getName());
+            }
+            else {
+                logger.debug("Profile from header not found: "+profileHeader);
             }
         }
 
