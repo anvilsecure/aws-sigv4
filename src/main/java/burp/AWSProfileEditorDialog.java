@@ -13,6 +13,7 @@ import java.time.Instant;
 public class AWSProfileEditorDialog extends JDialog
 {
     static final Color disabledColor = new Color(161, 161, 161);
+    private static final BurpExtender burp = BurpExtender.getBurp();
 
     protected JTextField nameTextField;
     protected JTextField profileKeyIdTextField;
@@ -77,7 +78,7 @@ public class AWSProfileEditorDialog extends JDialog
     return a dialog with a form for editing profiles. optional profile param can be used to populate the form.
     set profile to null for a create form.
      */
-    public AWSProfileEditorDialog(Frame owner, String title, boolean modal, AWSProfile profile, BurpExtender burp)
+    public AWSProfileEditorDialog(Frame owner, String title, boolean modal, AWSProfile profile)
     {
         super(owner, title, modal);
         setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
@@ -165,7 +166,7 @@ public class AWSProfileEditorDialog extends JDialog
 
         outerPanel.add(providerPanel, newConstraint(0, outerPanelY++, GridBagConstraints.LINE_START));
         statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
-        statusLabel.setForeground(burp.textOrange);
+        statusLabel.setForeground(BurpExtender.textOrange);
         okButton = new JButton("Ok");
         JButton cancelButton = new JButton("Cancel");
 

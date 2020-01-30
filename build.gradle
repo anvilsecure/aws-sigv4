@@ -1,5 +1,5 @@
 plugins {
-    id 'java'
+    id 'java-library'
 }
 
 version '1.2-SNAPSHOT'
@@ -12,11 +12,16 @@ repositories {
 
 dependencies {
     implementation 'net.portswigger.burp.extender:burp-extender-api:2.1'
-    compile 'javax.xml.bind:jaxb-api:2.3.0'
-    compile 'com.google.code.gson:gson:2.8.6'
+    implementation 'com.google.code.gson:gson:2.8.6'
+    implementation platform('software.amazon.awssdk:bom:2.10.55')
+    implementation 'software.amazon.awssdk:auth'
+    implementation 'software.amazon.awssdk:sts'
+    implementation 'software.amazon.awssdk:apache-client'
+    implementation 'org.slf4j:slf4j-simple:1.7.30'
 }
 
 task bigJar(type: Jar) {
-    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    from { configurations.compileClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
     with jar
 }
