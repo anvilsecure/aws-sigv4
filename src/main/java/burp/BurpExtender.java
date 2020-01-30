@@ -9,6 +9,7 @@ import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.signer.Aws4Signer;
 import software.amazon.awssdk.auth.signer.AwsS3V4Signer;
+import software.amazon.awssdk.auth.signer.params.Aws4PresignerParams;
 import software.amazon.awssdk.auth.signer.params.Aws4SignerParams;
 import software.amazon.awssdk.auth.signer.params.AwsS3V4SignerParams;
 import software.amazon.awssdk.http.SdkHttpFullRequest;
@@ -28,11 +29,13 @@ import java.awt.event.ActionListener;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.List;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -696,8 +699,16 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             case IContextMenuInvocation.CONTEXT_PROXY_HISTORY:
                 IHttpRequestResponse[] messages = invocation.getSelectedMessages();
                 IRequestInfo requestInfo = helpers.analyzeRequest(messages[0]);
-                final boolean isSigV4 = isAws4Request(requestInfo);
-                if ((messages.length > 0) && requestInfo.getMethod().toUpperCase().equals("GET") && isSigV4) {
+
+                // get signature properties from authorization header. this will return empty strings if validation fails.
+                List <String> authorizationHeaders = requestInfo.getHeaders().stream()
+                        .filter(h -> h.toLowerCase().startsWith("authorization:")).collect(Collectors.toList());
+                Map<String, String> authorizationMap = parseSigV4AuthorizationHeader(
+                        (authorizationHeaders.size() > 0) ? authorizationHeaders.get(0) : "", false);
+                // assume sigv4 if any values were successfully parsed from the authorization header
+                final boolean isSigV4 = authorizationMap.values().stream().anyMatch(v -> v.length() > 0);
+
+                if ((messages.length > 0) && requestInfo.getMethod().toUpperCase().equals("GET") && authorizationMap.get("service").toLowerCase().equals("s3")) {
                     JMenuItem signedUrlItem = new JMenuItem("Copy Signed URL");
                     signedUrlItem.addActionListener(new ActionListener()
                     {
@@ -802,7 +813,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 AWSProfileEditorDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null);
                                 List<Map<String, String>> signatures = authorizationHeaders.stream()
                                         .map(h -> parseSigV4AuthorizationHeader(h, false))
-                                        .filter(m -> m != null)
+                                        .filter(Objects::nonNull)
                                         .collect(Collectors.toList());
                                 if (signatures.size() > 0) {
                                     dialog.profileKeyIdTextField.setText(signatures.get(0).get("accessKeyId"));
@@ -853,6 +864,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     "region", matcher.group("region"),
                     "service", matcher.group("service"),
                     "headers", matcher.group("headers")
+            );
+        }
+        else if (!validate) {
+            auth = Map.of(
+                    "accessKeyId", "",
+                    "date", "",
+                    "region", "",
+                    "service", "",
+                    "headers", ""
             );
         }
         return auth;
@@ -968,41 +988,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     /*
     Check if the request is signed with SigV4. Not a strict check.
+    This routine needs to be fast since potentially ALL requests will cause an invocation.
+    https://docs.aws.amazon.com/general/latest/gr/sigv4-date-handling.html
     */
     public static boolean isAws4Request(IRequestInfo request)
     {
-        // all AWS requests require x-amz-date either in the query string or as a header. Date can be used but is not unique enough.
-        // Consider adding additional check for Authorization header or X-Amz-Credential query string param - DONE
-        // This routine needs to be fast since potentially ALL requests will cause an invocation.
-        // https://docs.aws.amazon.com/general/latest/gr/sigv4-date-handling.html
-        boolean hasAmzDate = false;
-        boolean hasAmzCreds = false;
-        for (String header : request.getHeaders()) {
-            if (!hasAmzDate && header.toLowerCase().startsWith("x-amz-date:")) {
-                hasAmzDate = true;
-                if (hasAmzCreds) break;
-            }
-            else if (!hasAmzCreds && header.toLowerCase().startsWith("authorization:")) {
-                hasAmzCreds = true;
-                if (hasAmzDate) break;
-            }
-        }
-
-        // we don't reset hasAmzDate/hasAmzCreds here even though parameters probably shouldn't be mixed.
-
-        // check for query string parameters
-        for (IParameter param : request.getParameters()) {
-            if (!hasAmzDate && param.getName().toLowerCase().equals("x-amz-date")) {
-                hasAmzDate = true;
-                if (hasAmzCreds) break;
-            }
-            else if (!hasAmzCreds && param.getName().toLowerCase().equals("x-amz-credential")) {
-                hasAmzCreds = true;
-                if (hasAmzDate) break;
-            }
-        }
-
-        return (hasAmzDate && hasAmzCreds);
+        return request.getHeaders().stream().anyMatch(h -> h.toLowerCase().startsWith("authorization: aws4-hmac-sha256")) ||
+                request.getParameters().stream().anyMatch(p -> p.getName().toLowerCase().equals("x-amz-credential"));
     }
 
     private String getDefaultProfileName()
@@ -1071,18 +1063,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     public AWSProfile getSigningProfile(List<String> headers)
     {
-        AWSProfile signingProfile = null;
-
         // check for http header that specifies a signing profile
-        final List<String> profileHeaders = headers.stream()
+        AWSProfile signingProfile = headers.stream()
                 .filter(h -> h.toLowerCase().startsWith(PROFILE_HEADER_NAME+":"))
-                .map(h -> splitHeader(h)[1]).collect(Collectors.toList());
-        for (final String name : profileHeaders) {
-            if (this.profileNameMap.get(name) != null) {
-                signingProfile = this.profileNameMap.get(profileHeaders.get(0));
-                break;
-            }
-        }
+                .map(h -> this.profileNameMap.get(splitHeader(h)[1]))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
 
         // default profile has next highest priority
         if (signingProfile == null) {
@@ -1311,6 +1298,85 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final AWSProfile signingProfile, final long durationSeconds)
     {
+
+        IRequestInfo request = helpers.analyzeRequest(httpService, originalRequestBytes);
+        // parse authorization header
+        String region = "";
+        String service = "";
+
+        for (final String header : request.getHeaders()) {
+            if (header.toLowerCase().startsWith("authorization:")) {
+                Matcher matcher = authorizationHeaderRegex.matcher(header);
+                if (matcher.matches()) {
+                    region = matcher.group("region");
+                    service = matcher.group("service");
+                    break;
+                }
+            }
+        }
+
+        //TODO error check
+        final AWSCredential credential = signingProfile.getCredential();
+        AwsCredentials awsCredentials;
+        if (credential.isTemporary()) {
+            awsCredentials = AwsSessionCredentials.create(credential.getAccessKeyId(), credential.getSecretKey(), ((AWSTemporaryCredential) credential).getSessionToken());
+        }
+        else {
+            awsCredentials = AwsBasicCredentials.create(credential.getAccessKeyId(), credential.getSecretKey());
+        }
+
+        // if region or service are specified in the profile, override them from original request
+        if (!signingProfile.getRegion().equals("")) {
+            region = signingProfile.getRegion();
+        }
+        if (!signingProfile.getService().equals("")) {
+            service = signingProfile.getService();
+        }
+
+        // build request object for signing
+        URI uri;
+        try {
+            uri = request.getUrl().toURI();
+        } catch (URISyntaxException exc) {
+            logger.error("Bad URL for signature: "+request.getUrl());
+            return null;
+        }
+
+        final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);
+        final SdkHttpFullRequest awsRequest = SdkHttpFullRequest.builder()
+                .uri(uri)
+                .method(SdkHttpMethod.fromValue(request.getMethod()))
+                .contentStreamProvider(() -> new ByteArrayInputStream(body))
+                .build();
+
+        // sign the request. can throw IllegalArgumentException
+        SdkHttpFullRequest signedRequest;
+        if (service.toLowerCase().equals("s3")) {
+            Aws4PresignerParams signerParams = Aws4PresignerParams.builder()
+                    .awsCredentials(awsCredentials)
+                    .signingRegion(Region.of(region))
+                    .signingName(service)
+                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
+                    .expirationTime(Instant.now().plusSeconds(durationSeconds))
+                    .build();
+            signedRequest = AwsS3V4Signer.create().presign(awsRequest, signerParams);
+        }
+        else {
+            Aws4PresignerParams signerParams = Aws4PresignerParams.builder()
+                    .awsCredentials(awsCredentials)
+                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
+                    .signingRegion(Region.of(region))
+                    .signingName(service)
+                    .expirationTime(Instant.now().plusSeconds(durationSeconds))
+                    .build();
+            signedRequest = Aws4Signer.create().presign(awsRequest, signerParams);
+        }
+
+        try {
+            return signedRequest.getUri().toURL();
+        } catch (MalformedURLException exc) {
+            logger.error("Invalid pre-signed URL: "+signedRequest.getUri().toASCIIString());
+        }
         return null;
     }
 
@@ -1337,7 +1403,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 final byte[] requestBytes = signRequest(messageInfo.getHttpService(), messageInfo.getRequest(), signingProfile);
                 if (requestBytes != null) {
                     messageInfo.setRequest(requestBytes);
-                    messageInfo.setComment(DISPLAY_NAME+signingProfile.getName());
+                    messageInfo.setComment(DISPLAY_NAME+" "+signingProfile.getName());
                 }
             }
         }
