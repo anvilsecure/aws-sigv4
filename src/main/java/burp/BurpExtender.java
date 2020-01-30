@@ -4,6 +4,19 @@ import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
+import software.amazon.awssdk.auth.signer.Aws4Signer;
+import software.amazon.awssdk.auth.signer.AwsS3V4Signer;
+import software.amazon.awssdk.auth.signer.params.Aws4SignerParams;
+import software.amazon.awssdk.auth.signer.params.AwsS3V4SignerParams;
+import software.amazon.awssdk.http.SdkHttpFullRequest;
+import software.amazon.awssdk.http.SdkHttpMethod;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.sts.StsClient;
+import software.amazon.awssdk.services.sts.model.GetCallerIdentityResponse;
+import software.amazon.awssdk.services.sts.model.StsException;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -12,21 +25,27 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
-    private static final String AWSIG_VERSION = "1.2.1";
+    private static final String EXTENSION_VERSION = "1.2.2";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
-    private static final String SETTING_VERSION = "AwsigVersion";
+    private static final String SETTING_VERSION = "ExtensionVersion";
     private static final String SETTING_PROFILES = "SerializedProfileList";
     private static final String SETTING_PERSISTENT_PROFILES = "PersistentProfiles";
     private static final String SETTING_EXTENSION_ENABLED = "ExtensionEnabled";
@@ -36,18 +55,23 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String SETTING_CUSTOM_HEADERS_OVERWRITE = "CustomSignedHeadersOverwrite";
     private static final String SETTING_ADDITIONAL_SIGNED_HEADER_NAMES = "AdditionalSignedHeaderNames";
     private static final String SETTING_IN_SCOPE_ONLY = "InScopeOnly";
+    private static final String SETTING_PRESERVE_HEADER_ORDER = "PreserveHeaderOrder";
 
-    private static final String AWS_STS_HOSTNAME = "sts.amazonaws.com";
-    private static final String AWS_STS_REGION = "us-east-1";
-    private static final String AWS_STS_SIGNAME = "sts";
+    public static final String EXTENSION_NAME = "SigV4"; // Name in extender menu
+    public static final String DISPLAY_NAME = "SigV4"; // name for tabs, menu, and other UI components
+    private static final long PRESIGN_DURATION_SECONDS = 900; // pre-signed url lifetime
 
-    private static final String NO_DEFAULT_PROFILE = "";
+    private static final String NO_DEFAULT_PROFILE = "        "; // ensure combobox is visible. AWSProfile.profileNamePattern doesn't allow this name
+    private static final String PROFILE_HEADER_NAME = "X-BurpSigV4-Profile".toLowerCase();
+    private static final Pattern authorizationHeaderRegex = Pattern.compile("^Authorization: AWS4-HMAC-SHA256 Credential=(?<accessKeyId>[\\w]{16,128})/(?<date>[0-9]{8})/(?<region>[a-z0-9-]{5,64})/(?<service>[a-z0-9-]{1,64})/aws4_request, SignedHeaders=(?<headers>[\\w;-]+), Signature=[a-z0-9]{64}$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern authorizationHeaderLooseRegex = Pattern.compile("^Authorization:\\s+AWS4-HMAC-SHA256\\s+Credential=(?<accessKeyId>[\\w-]{0,128})/(?<date>[\\w-]{0,8})/(?<region>[\\w-]{0,64})/(?<service>[\\w-]{0,64})/aws4_request,\\s+SignedHeaders=(?<headers>[\\w;-]+),\\s+Signature=[\\w-]{0,64}$", Pattern.CASE_INSENSITIVE);
 
     protected IExtensionHelpers helpers;
     protected IBurpExtenderCallbacks callbacks;
     private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, AWSProfile> profileNameMap; // map name to profile
     protected LogWriter logger = LogWriter.getLogger();
+    private boolean preserveHeaderOrder = true; // preserve order of headers after signing
 
     private JLabel statusLabel;
     private JCheckBox signingEnabledCheckBox;
@@ -171,7 +195,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         //
         JPanel customHeadersPanel = new JPanel(new GridBagLayout());
         JLabel customHeadersLabel = new JLabel("Custom Signed Headers");
-        customHeadersLabel.setForeground(this.textOrange);
+        customHeadersLabel.setForeground(textOrange);
         customHeadersLabel.setFont(sectionFont);
         customHeadersOverwriteCheckbox = new JCheckBox("Overwrite existing headers");
         customHeadersOverwriteCheckbox.setToolTipText("Default behavior is to append these headers even if they exist in original request");
@@ -260,7 +284,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                JDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null, BurpExtender.this);
+                JDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null);
                 callbacks.customizeUiComponent(dialog);
                 dialog.setVisible(true);
             }
@@ -274,7 +298,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 if (rowIndeces.length == 1) {
                     DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
-                    JDialog dialog = new AWSProfileEditorDialog(null, "Edit Profile", true, profileNameMap.get(name), BurpExtender.this);
+                    JDialog dialog = new AWSProfileEditorDialog(null, "Edit Profile", true, profileNameMap.get(name));
                     callbacks.customizeUiComponent(dialog);
                     dialog.setVisible(true);
                 }
@@ -303,43 +327,27 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                // build a signed request to STS GetCallerIdentity API to test the credentials and send it to repeater
-                // Notes
-                //   * this request will be subject to any modifications specified in the plugin
-                //   * if profile has a region set, it will override the region set here
-                //     - temp fix is to check "In-scope Only" and ensure AWS_STS_HOSTNAME is not in scope
-                //   * this inserts a header to force the use of the specified profile so it isn't overridden by the default profile
+                // Test credentials by making a request to sts:GetCallerIdentity
                 int[] rowIndeces = profileTable.getSelectedRows();
                 DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                 if (rowIndeces.length == 1) {
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
                     AWSProfile profile = profileNameMap.get(name);
-                    // build the request
-                    final String requestBody = "Version=2011-06-15&Action=GetCallerIdentity";
-                    List<String> headers = new ArrayList<>();
-                    headers.add("POST / HTTP/1.1");
-                    headers.add("Host: "+AWS_STS_HOSTNAME);
-                    headers.add("Content-Type: application/x-www-form-urlencoded; charset=utf-8");
-                    IHttpService httpService = helpers.buildHttpService(AWS_STS_HOSTNAME, 443, true);
-                    AWSSignedRequest signedRequest = new AWSSignedRequest(
-                            httpService,
-                            helpers.buildHttpMessage(headers, helpers.stringToBytes(requestBody)),
-                            BurpExtender.this);
-                    signedRequest.applyProfile(profile);
-                    signedRequest.setRegion(AWS_STS_REGION);
-                    signedRequest.setService(AWS_STS_SIGNAME);
+                    StsClient stsClient = StsClient.builder()
+                            .region(Region.US_EAST_1)
+                            .credentialsProvider(() -> {
+                                final AWSCredential cred = profile.getCredential();
+                                return AwsBasicCredentials.create(cred.getAccessKeyId(), cred.getSecretKey());
+                            })
+                            .build();
 
-                    // Rebuild signed request bytes with the profile header. this is required since this header gets stripped
-                    // after the request is signed. this header will ensure the message is signed with the correct profile
-                    final byte[] signedRequestBytes = signedRequest.getSignedRequestBytes(profile.getCredential());
-                    headers = helpers.analyzeRequest(signedRequestBytes).getHeaders();
-                    headers.add(String.format("%s: %s", AWSSignedRequest.PROFILE_HEADER_NAME, profile.getName()));
-
-                    callbacks.sendToRepeater(httpService.getHost(),
-                            httpService.getPort(),
-                            true /* useHttps */,
-                            helpers.buildHttpMessage(headers, signedRequest.getPayloadBytes()),
-                            profile.getName());
+                    try {
+                        GetCallerIdentityResponse response = stsClient.getCallerIdentity();
+                        JDialog dialog = new ProfileTestDialog(null, "sts:GetCallerIdentity: "+profile.getName(), false, response);
+                        dialog.setVisible(true);
+                    } catch (StsException exc) {
+                        JOptionPane.showMessageDialog(getUiComponent(), exc.getMessage());
+                    }
                 }
                 else {
                     updateStatus("Select a single profile to test");
@@ -352,7 +360,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             public void actionPerformed(ActionEvent actionEvent)
             {
                 try {
-                    AWSProfileImportDialog importDialog = new AWSProfileImportDialog(null, "Import Profiles", true, BurpExtender.this);
+                    AWSProfileImportDialog importDialog = new AWSProfileImportDialog(null, "Import Profiles", true);
                     callbacks.customizeUiComponent(importDialog);
                     importDialog.setVisible(true);
                 }
@@ -455,7 +463,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
 
-        callbacks.setExtensionName("SigV4");
+        callbacks.setExtensionName(EXTENSION_NAME);
         callbacks.registerExtensionStateListener(this);
 
         this.logger.configure(callbacks.getStdout(), callbacks.getStderr(), LogWriter.DEFAULT_LEVEL);
@@ -478,7 +486,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 callbacks.registerHttpListener(BurpExtender.this);
                 callbacks.registerContextMenuFactory(BurpExtender.this);
                 callbacks.registerMessageEditorTabFactory(BurpExtender.this);
-                logger.info("Loaded AWSig "+AWSIG_VERSION);
+                logger.info(String.format("Loaded %s %s", EXTENSION_NAME, EXTENSION_VERSION));
             }
         });
     }
@@ -512,7 +520,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private void saveExtensionSettings()
     {
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(this.logger.getLevel()));
-        this.callbacks.saveExtensionSetting(SETTING_VERSION, AWSIG_VERSION);
+        this.callbacks.saveExtensionSetting(SETTING_VERSION, EXTENSION_VERSION);
 
         HashMap<String, Object> settings = new HashMap<>();
         settings.put(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected());
@@ -522,6 +530,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         settings.put(SETTING_CUSTOM_HEADERS_OVERWRITE, this.customHeadersOverwriteCheckbox.isSelected());
         settings.put(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, getAdditionalSignedHeadersFromUI());
         settings.put(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected());
+        settings.put(SETTING_PRESERVE_HEADER_ORDER, this.preserveHeaderOrder);
         this.callbacks.saveExtensionSetting(BURP_SETTINGS_KEY, new Gson().toJson(settings));
 
         if (this.persistProfilesCheckBox.isSelected()) {
@@ -544,6 +553,29 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         else
             logger.info("Found settings for version < 1.2.0");
 
+        // load saved profiles
+        final String profilesJsonString = this.callbacks.loadExtensionSetting(SETTING_PROFILES);
+        if (profilesJsonString != null && !profilesJsonString.equals("")) {
+            Gson gson = getGsonSerializer();
+            final Type hashMapType = new TypeToken<HashMap<String, AWSProfile>>(){}.getType();
+            Map<String, AWSProfile> profileMap;
+            try {
+                profileMap = gson.fromJson(profilesJsonString, hashMapType);
+            } catch (JsonParseException exc) {
+                logger.error("Failed to parse profile JSON");
+                // overwrite invalid settings
+                this.callbacks.saveExtensionSetting(SETTING_PROFILES, "{}");
+                profileMap = new HashMap<>();
+            }
+            for (final String name : profileMap.keySet()) {
+                try {
+                    addProfile(profileMap.get(name));
+                } catch (IllegalArgumentException exc) {
+                    logger.error("Failed to add profile: "+name);
+                }
+            }
+        }
+
         final String jsonSettingsString = this.callbacks.loadExtensionSetting(BURP_SETTINGS_KEY);
         if (jsonSettingsString == null || jsonSettingsString.equals("")) {
             logger.info("No plugin settings found");
@@ -553,8 +585,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             if (settings.has(SETTING_DEFAULT_PROFILE_NAME))
                 setDefaultProfileName(settings.get(SETTING_DEFAULT_PROFILE_NAME).getAsString());
             else
-                setDefaultProfileName(null);
-            if (settings.has(SETTING_DEFAULT_PROFILE_NAME))
+                setDefaultProfileName(NO_DEFAULT_PROFILE);
+            if (settings.has(SETTING_PERSISTENT_PROFILES))
                 this.persistProfilesCheckBox.setSelected(settings.get(SETTING_PERSISTENT_PROFILES).getAsBoolean());
             else
                 this.persistProfilesCheckBox.setSelected(false);
@@ -586,28 +618,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 this.inScopeOnlyCheckBox.setSelected(settings.get(SETTING_IN_SCOPE_ONLY).getAsBoolean());
             else
                 this.inScopeOnlyCheckBox.setSelected(false);
-        }
-
-        final String profilesJsonString = this.callbacks.loadExtensionSetting(SETTING_PROFILES);
-        if (profilesJsonString != null && !profilesJsonString.equals("")) {
-            Gson gson = getGsonSerializer();
-            final Type hashMapType = new TypeToken<HashMap<String, AWSProfile>>(){}.getType();
-            Map<String, AWSProfile> profileMap;
-            try {
-                profileMap = gson.fromJson(profilesJsonString, hashMapType);
-            } catch (JsonParseException exc) {
-                logger.error("Failed to parse profile JSON");
-                // overwrite invalid settings
-                this.callbacks.saveExtensionSetting(SETTING_PROFILES, "{}");
-                profileMap = new HashMap<>();
-            }
-            for (final String name : profileMap.keySet()) {
-                try {
-                    addProfile(profileMap.get(name));
-                } catch (IllegalArgumentException exc) {
-                    logger.error("Failed to add profile: "+name);
-                }
-            }
+            if (settings.has(SETTING_PRESERVE_HEADER_ORDER))
+                this.preserveHeaderOrder = settings.get(SETTING_PRESERVE_HEADER_ORDER).getAsBoolean();
         }
 
     }
@@ -615,20 +627,20 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public IMessageEditorTab createNewInstance(IMessageEditorController controller, boolean editable)
     {
-        return new AWSMessageEditorTab(controller, editable, this);
+        return new AWSMessageEditorTab(controller, editable);
     }
 
     @Override
     public void extensionUnloaded()
     {
         saveExtensionSettings();
-        logger.info("Unloading AWSig");
+        logger.info("Unloading "+EXTENSION_NAME);
     }
 
     @Override
     public String getTabCaption()
     {
-        return "SigV4";
+        return DISPLAY_NAME;
     }
 
     @Override
@@ -640,7 +652,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public List<JMenuItem> createMenuItems(IContextMenuInvocation invocation)
     {
-        JMenu menu = new JMenu("SigV4");
+        JMenu menu = new JMenu(DISPLAY_NAME);
 
         // add disable item
         JRadioButtonMenuItem item = new JRadioButtonMenuItem("<html><i>Disabled</i></html>", !isSigningEnabled());
@@ -684,7 +696,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             case IContextMenuInvocation.CONTEXT_PROXY_HISTORY:
                 IHttpRequestResponse[] messages = invocation.getSelectedMessages();
                 IRequestInfo requestInfo = helpers.analyzeRequest(messages[0]);
-                boolean isSigV4 = isAwsRequest(requestInfo);
+                final boolean isSigV4 = isAws4Request(requestInfo);
                 if ((messages.length > 0) && requestInfo.getMethod().toUpperCase().equals("GET") && isSigV4) {
                     JMenuItem signedUrlItem = new JMenuItem("Copy Signed URL");
                     signedUrlItem.addActionListener(new ActionListener()
@@ -692,15 +704,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         @Override
                         public void actionPerformed(ActionEvent actionEvent)
                         {
-                            AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], BurpExtender.this);
-                            final AWSProfile profile = customizeSignedRequest(signedRequest);
+                            final AWSProfile profile = getSigningProfile(requestInfo.getHeaders());
                             String signedUrl = ""; // clear clipboard on error
                             if (profile == null) {
-                                logger.error("Failed to apply custom settings to signed request");
+                                // XXX consider notifying user of error
+                                logger.error("Failed to determine signing profile");
                             }
                             else {
-                                // sign a url valid for 120 seconds. XXX consider making this configurable.
-                                signedUrl = signedRequest.getSignedUrl(profile.getCredential(), 120);
+                                // sign a url valid for ? seconds. XXX consider making this configurable.
+                                signedUrl = presignRequest(messages[0].getHttpService(), messages[0].getRequest(), profile).toString();
                             }
                             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                             clipboard.setContents(new StringSelection(signedUrl), null);
@@ -713,26 +725,26 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     for (final String name : profileList) {
                         if (name.length() == 0) continue;
                         JMenuItem sigItem = new JMenuItem(name);
+                        sigItem.setActionCommand(name);
                         sigItem.addActionListener(new ActionListener()
                         {
                             @Override
                             public void actionPerformed(ActionEvent actionEvent)
                             {
-                                JMenuItem sigItem = (JMenuItem)actionEvent.getSource();
-                                AWSSignedRequest signedRequest = AWSSignedRequest.fromUnsignedRequest(messages[0], profileNameMap.get(sigItem.getText()), BurpExtender.this);
-                                final AWSProfile profile = customizeSignedRequest(signedRequest);
+                                final String profileName = actionEvent.getActionCommand();
+                                AWSProfile profile = profileNameMap.get(profileName);
                                 if (profile == null) {
                                     // XXX maybe use an "Add Profile" dialog here?
-                                    logger.error("Invalid profile specified. KeyId does not exist: "+signedRequest.getAccessKeyId());
+                                    logger.error("Profile name does not exist: "+profileName);
                                     return;
                                 }
                                 // if region or service is missing, prompt user. do not re-prompt if values are left blank
-                                if (signedRequest.getService().equals("") || signedRequest.getRegion().equals("")) {
-                                    AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Add Signature", true, profile, BurpExtender.this);
+                                if (profile.getService().equals("") || profile.getRegion().equals("")) {
+                                    AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Add Signature", true, profile);
                                     callbacks.customizeUiComponent(dialog);
                                     dialog.disableForEdit();
                                     // set focus to first missing field
-                                    if (signedRequest.getRegion().equals("")) {
+                                    if (profile.getRegion().equals("")) {
                                         dialog.regionTextField.requestFocus();
                                     }
                                     else {
@@ -743,9 +755,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                         // user hit "Cancel", abort.
                                         return;
                                     }
-                                    signedRequest.applyProfile(dialog.getProfile());
+                                    profile = dialog.getProfile();
                                 }
-                                messages[0].setRequest(signedRequest.getSignedRequestBytes(profile.getCredential()));
+                                try {
+                                    messages[0].setRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), profile));
+                                } catch (IllegalArgumentException exc) {
+                                    logger.error("Failed to add signature: "+exc.getMessage());
+                                }
                             }
                         });
                         addSignatureMenu.add(sigItem);
@@ -759,41 +775,60 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         @Override
                         public void actionPerformed(ActionEvent actionEvent)
                         {
-                            AWSSignedRequest signedRequest = new AWSSignedRequest(messages[0], BurpExtender.this);
-                            final AWSProfile sigProfile = signedRequest.getAnonymousProfile(); // build profile from original request
-                            final AWSProfile savedProfile = customizeSignedRequest(signedRequest); // get profile used to sign original request (if it exists)
-                            if (savedProfile == null) {
-                                // if existing profile doesn't exist with this key id, create one and apply it
-                                AWSProfileEditorDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null, BurpExtender.this);
-                                dialog.applyProfile(sigProfile); // auto fill fields gathered from original request. fails if auth header is invalid
-                                dialog.nameTextField.setText(""); // overwrite garbage value used to pass validation
-                                callbacks.customizeUiComponent(dialog);
+                            IRequestInfo requestInfo = helpers.analyzeRequest(messages[0]);
+                            AWSProfile signingProfile = null;
+                            final List<String> authorizationHeaders = requestInfo.getHeaders().stream()
+                                    .filter(h -> h.toLowerCase().startsWith("authorization:"))
+                                    .collect(Collectors.toList());
+                            for (final String value : authorizationHeaders) {
+                                Matcher matcher = authorizationHeaderRegex.matcher(value);
+                                if (matcher.matches()) {
+                                    AWSProfile tempProfile = profileKeyIdMap.get(matcher.group("accessKeyId"));
+                                    if (tempProfile != null) {
+                                        AWSProfile.Builder builder = new AWSProfile.Builder(tempProfile);
+                                        if (tempProfile.getService().equals("")) {
+                                            builder.withService(matcher.group("service"));
+                                        }
+                                        if (tempProfile.getRegion().equals("")) {
+                                            builder.withRegion(matcher.group("region"));
+                                        }
+                                        signingProfile = builder.build();
+                                        break;
+                                    }
+                                }
+                            }
+                            if (signingProfile == null) {
+                                // request is likely invalid SigV4 format
+                                AWSProfileEditorDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null);
+                                List<Map<String, String>> signatures = authorizationHeaders.stream()
+                                        .map(h -> parseSigV4AuthorizationHeader(h, false))
+                                        .filter(m -> m != null)
+                                        .collect(Collectors.toList());
+                                if (signatures.size() > 0) {
+                                    dialog.profileKeyIdTextField.setText(signatures.get(0).get("accessKeyId"));
+                                    dialog.serviceTextField.setText(signatures.get(0).get("service"));
+                                    dialog.regionTextField.setText(signatures.get(0).get("region"));
+                                }
                                 dialog.setVisible(true);
                                 final String newProfileName = dialog.getNewProfileName();
                                 if (newProfileName != null) {
                                     final AWSProfile newProfile = profileNameMap.get(newProfileName);
                                     if (newProfile != null) {
-                                        signedRequest.applyProfile(newProfile);
-                                        messages[0].setRequest(signedRequest.getSignedRequestBytes(newProfile.getCredential()));
+                                        messages[0].setRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), newProfile));
                                     } // else... XXX maybe display an error dialog here
                                 }
-                                return;
                             }
-                            AWSProfile editedProfile = new AWSProfile.Builder(savedProfile) // get profile as saved by the accessKey
-                            // some values may differ from what are saved for the profile, so set them here.
-                                    .withRegion(sigProfile.getRegion())
-                                    .withService(sigProfile.getService())
-                                    .build();
-                            AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Edit Signature", true, editedProfile, BurpExtender.this);
-                            callbacks.customizeUiComponent(dialog);
-                            // disable profile name and secret since they will have to be changed in the top-level plugin tab.
-                            // XXX would be nice to have a combobox for the profile here instead of disabling.
-                            dialog.disableForEdit();
-                            dialog.setVisible(true);
-                            if (dialog.getProfile() != null) {
-                                // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.
-                                signedRequest.applyProfile(dialog.getProfile());
-                                messages[0].setRequest(signedRequest.getSignedRequestBytes(editedProfile.getCredential()));
+                            else {
+                                AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Edit Signature", true, signingProfile);
+                                callbacks.customizeUiComponent(dialog);
+                                // disable profile name and secret since they will have to be changed in the top-level plugin tab.
+                                // XXX would be nice to have a combobox for the profile here instead of disabling.
+                                dialog.disableForEdit();
+                                dialog.setVisible(true);
+                                if (dialog.getProfile() != null) {
+                                    // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.
+                                    messages[0].setRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), dialog.getProfile()));
+                                }
                             }
                         }
                     });
@@ -801,6 +836,26 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 }
         }
         return list;
+    }
+
+    private Map<String, String> parseSigV4AuthorizationHeader(final String header, final boolean validate)
+    {
+        Map<String, String> auth = null;
+        Pattern pattern = authorizationHeaderLooseRegex;
+        if (validate) {
+            pattern = authorizationHeaderRegex;
+        }
+        Matcher matcher = pattern.matcher(header);
+        if (matcher.matches()) {
+            auth = Map.of(
+                    "accessKeyId", matcher.group("accessKeyId"),
+                    "date", matcher.group("date"),
+                    "region", matcher.group("region"),
+                    "service", matcher.group("service"),
+                    "headers", matcher.group("headers")
+            );
+        }
+        return auth;
     }
 
     // display status message in UI
@@ -912,9 +967,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     }
 
     /*
-    Check if the request is for AWS. Can be POST or GET request.
+    Check if the request is signed with SigV4. Not a strict check.
     */
-    public static boolean isAwsRequest(IRequestInfo request)
+    public static boolean isAws4Request(IRequestInfo request)
     {
         // all AWS requests require x-amz-date either in the query string or as a header. Date can be used but is not unique enough.
         // Consider adding additional check for Authorization header or X-Amz-Credential query string param - DONE
@@ -959,34 +1014,29 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return defaultProfileName;
     }
 
-    private boolean setDefaultProfileName(final String defaultProfileName)
+    /*
+    Note that no check is done on profile name. It is assumed values come from AWSProfile and are validated there.
+     */
+    private void setDefaultProfileName(final String defaultProfileName)
     {
         if (defaultProfileName != null) {
             for (int i = 0; i < this.defaultProfileComboBox.getItemCount(); i++) {
                 if (this.defaultProfileComboBox.getItemAt(i).equals(defaultProfileName)) {
                     this.defaultProfileComboBox.setSelectedIndex(i);
                     //updateStatus("Default profile changed.");
-                    return true;
+                    return;
                 }
             }
         }
-        return false;
-    }
-
-    public AWSProfile getSigningProfile(final String requestAccessKeyId)
-    {
-        AWSProfile profile = this.profileNameMap.get(getDefaultProfileName());
-        if (profile == null) {
-            profile = this.profileKeyIdMap.get(requestAccessKeyId);
-        }
-        return profile;
+        // possible if persistProfiles was set to false and default profile was not saved
     }
 
     private List<String> getAdditionalSignedHeadersFromUI()
     {
         return Arrays.asList(additionalSignedHeadersField.getText().split(",+"))
                 .stream()
-                .map(h -> h.trim())
+                .map(String::trim)
+                .filter(h -> h.length() > 0)
                 .collect(Collectors.toList());
     }
 
@@ -996,9 +1046,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         List<String> headers = new ArrayList<>();
         DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
         for (int i = 0; i < model.getRowCount(); i++) {
-            final String name = (String) model.getValueAt(i, 0);
-            final String value = (String) model.getValueAt(i, 1);
-            if (!name.equals("")) { // skip empty header names
+            final String name = ((String) model.getValueAt(i, 0)).trim();
+            final String value = ((String) model.getValueAt(i, 1)).trim();
+            if (name.length() > 0) { // skip empty header names
                 headers.add(String.format("%s: %s", name, value));
             }
         }
@@ -1019,42 +1069,249 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
     }
 
-    /*
-    apply settings to a signed request and return applied profile
-     */
-    public AWSProfile customizeSignedRequest(AWSSignedRequest signedRequest)
+    public AWSProfile getSigningProfile(List<String> headers)
     {
-        AWSProfile profile = null;
+        AWSProfile signingProfile = null;
 
-        // check if the "X-BurpAwsig-Profile: PROFILE" header was used to specify a profile
-        final String profileHeader = signedRequest.getProfileHeaderValue();
-        if (profileHeader != null) {
-            profile = this.profileNameMap.get(profileHeader);
-            if (profile != null) {
-                logger.debug("Using profile from header: "+profile.getName());
-            }
-            else {
-                logger.debug("Profile from header not found: "+profileHeader);
+        // check for http header that specifies a signing profile
+        final List<String> profileHeaders = headers.stream()
+                .filter(h -> h.toLowerCase().startsWith(PROFILE_HEADER_NAME+":"))
+                .map(h -> splitHeader(h)[1]).collect(Collectors.toList());
+        for (final String name : profileHeaders) {
+            if (this.profileNameMap.get(name) != null) {
+                signingProfile = this.profileNameMap.get(profileHeaders.get(0));
+                break;
             }
         }
 
-        if (profile == null) {
-            profile = getSigningProfile(signedRequest.getAccessKeyId());
+        // default profile has next highest priority
+        if (signingProfile == null) {
+            signingProfile = this.profileNameMap.get(getDefaultProfileName());
         }
 
-        if (profile == null) {
-            logger.error("No profile found for accessKeyId: " + signedRequest.getAccessKeyId());
+        // if still cannot determine profile, find matching accessKeyId
+        final List<String> authorizationHeaders = headers.stream()
+                .filter(h -> h.toLowerCase().startsWith("authorization:"))
+                .collect(Collectors.toList());
+        for (final String value : authorizationHeaders) {
+            Matcher matcher = authorizationHeaderRegex.matcher(value);
+            if (matcher.matches()) {
+                if (signingProfile == null) {
+                    signingProfile = this.profileKeyIdMap.get(matcher.group("accessKeyId"));
+                }
+
+                AWSProfile.Builder builder = new AWSProfile.Builder(signingProfile);
+                if (signingProfile.getService().equals("")) {
+                    builder.withService(matcher.group("service"));
+                }
+                if (signingProfile.getRegion().equals("")) {
+                    builder.withRegion(matcher.group("region"));
+                }
+                signingProfile = builder.build();
+                break;
+            }
+        }
+
+        return signingProfile;
+    }
+
+    /*
+     Always returns an array of size 2 even if value is empty string.
+     Name and value are trimmed of whitespace.
+     */
+    private String[] splitHeader(final String header)
+    {
+        List<String> tokens = Arrays.stream(header.split(":", 2))
+                .map(String::trim)
+                .collect(Collectors.toList());
+        if (tokens.size() < 2) {
+            return new String[]{tokens.get(0), ""};
+        }
+        return new String[]{tokens.get(0), tokens.get(1)};
+    }
+
+    private boolean shouldDoubleUrlEncodeForService(final String service)
+    {
+        //TODO track which services require double-encoding
+        return false;
+    }
+
+    public byte[] signRequest(final IHttpService httpService, final byte[] originalRequestBytes, final AWSProfile signingProfile)
+    {
+        IRequestInfo request = helpers.analyzeRequest(httpService, originalRequestBytes);
+        // parse authorization header
+        String region = "";
+        String service = "";
+        Set<String> signedHeaderSet = getAdditionalSignedHeadersFromUI().stream().map(String::toLowerCase).collect(Collectors.toSet());
+        signedHeaderSet.add("host"); // always require host header
+
+        for (final String header : request.getHeaders()) {
+            if (header.toLowerCase().startsWith("authorization:")) {
+                Matcher matcher = authorizationHeaderRegex.matcher(header);
+                if (matcher.matches()) {
+                    //accessKeyId = matcher.group("accessKeyId");
+                    region = matcher.group("region");
+                    service = matcher.group("service");
+                    // get headers to sign
+                    Arrays.stream(matcher.group("headers").split(";"))
+                            .forEach(h -> signedHeaderSet.add(h.toLowerCase()));
+                    break;
+                }
+            }
+        }
+
+        // build map of headers to sign. there are 4 checks:
+        //   1) if header was signed in original request
+        //   2) custom signed headers specified in UI
+        //   3) name starts with "X-Amz-"
+        //   4) additional signed header (name only) from UI
+        Map<String, List<String>> signedHeaderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Map<String, List<String>> unsignedHeaderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        List<String> allHeaders = request.getHeaders();
+        final String lineOne = allHeaders.remove(0);
+
+        for (final String header : allHeaders) {
+            final String[] tokens = splitHeader(header);
+            final String name = tokens[0];
+            final String value = tokens[1];
+            // check for request header that specifies profile name to use and leave out of final request
+            if (name.toLowerCase().equals(PROFILE_HEADER_NAME)) {
+                continue;
+            }
+            if (signedHeaderSet.contains(name.toLowerCase()) || name.toLowerCase().startsWith("x-amz-")) {
+                if (!signedHeaderMap.containsKey(name)) {
+                    signedHeaderMap.put(name, new ArrayList<String>());
+                }
+                signedHeaderMap.get(name).add(value);
+            }
+            else if (!name.toLowerCase().startsWith("authorization")) {
+                if (!unsignedHeaderMap.containsKey(name)) {
+                    unsignedHeaderMap.put(name, new ArrayList<String>());
+                }
+                unsignedHeaderMap.get(name).add(value);
+            }
+        }
+        for (final String header : getCustomHeadersFromUI()) {
+            final String[] tokens = splitHeader(header);
+            final String name = tokens[0];
+            final String value = tokens[1];
+            if (!signedHeaderMap.containsKey(name) || customHeadersOverwriteCheckbox.isSelected()) {
+                signedHeaderMap.put(name, new ArrayList<String>());
+            }
+            signedHeaderMap.get(name).add(value);
+        }
+
+        //TODO error check
+        final AWSCredential credential = signingProfile.getCredential();
+        AwsCredentials awsCredentials;
+        if (credential.isTemporary()) {
+            awsCredentials = AwsSessionCredentials.create(credential.getAccessKeyId(), credential.getSecretKey(), ((AWSTemporaryCredential) credential).getSessionToken());
+        }
+        else {
+            awsCredentials = AwsBasicCredentials.create(credential.getAccessKeyId(), credential.getSecretKey());
+        }
+
+        // if region or service are specified in the profile, override them from original request
+        if (!signingProfile.getRegion().equals("")) {
+            region = signingProfile.getRegion();
+        }
+        if (!signingProfile.getService().equals("")) {
+            service = signingProfile.getService();
+        }
+
+        // build request object for signing
+        URI uri;
+        try {
+            uri = request.getUrl().toURI();
+        } catch (URISyntaxException exc) {
+            logger.error("Bad URL for signature: "+request.getUrl());
             return null;
         }
 
-        // add any user-specified, custom HTTP headers
-        signedRequest.addSignedHeaders(getCustomHeadersFromUI(), customHeadersOverwriteCheckbox.isSelected());
+        // s3 will complain about duplicate headers that the signer itself adds (e.g. X-Amz-Date)
+        boolean signedPayload = false;
+        if (service.toLowerCase().equals("s3")) {
+            for (final String name : signedHeaderMap.keySet().stream().collect(Collectors.toList())) {
+                if (name.toLowerCase().startsWith("x-amz-")) {
+                    // check if original request had a signed payload
+                    if (name.toLowerCase().equals("x-amz-content-sha256")) {
+                        signedPayload = !signedHeaderMap.get("x-amz-content-sha256").get(0).toUpperCase().equals("UNSIGNED-PAYLOAD");
+                    }
+                    signedHeaderMap.remove(name);
+                }
+            }
+        }
 
-        // add names of additional headers to sign
-        signedRequest.addSignedHeaderNames(getAdditionalSignedHeadersFromUI());
+        final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);
+        final SdkHttpFullRequest awsRequest = SdkHttpFullRequest.builder()
+                .headers(signedHeaderMap)
+                .uri(uri)
+                .method(SdkHttpMethod.fromValue(request.getMethod()))
+                .contentStreamProvider(() -> new ByteArrayInputStream(body))
+                .build();
 
-        signedRequest.applyProfile(profile);
-        return profile;
+        // sign the request. can throw IllegalArgumentException
+        SdkHttpFullRequest signedRequest;
+        if (service.toLowerCase().equals("s3")) {
+            AwsS3V4SignerParams signerParams = AwsS3V4SignerParams.builder()
+                    .awsCredentials(awsCredentials)
+                    .signingRegion(Region.of(region))
+                    .signingName(service)
+                    .enablePayloadSigning(signedPayload)
+                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
+                    .build();
+            signedRequest = AwsS3V4Signer.create().sign(awsRequest, signerParams);
+        }
+        else {
+            Aws4SignerParams signerParams = Aws4SignerParams.builder()
+                    .awsCredentials(awsCredentials)
+                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service)) // service dependent
+                    .signingRegion(Region.of(region))
+                    .signingName(service)
+                    .build();
+            signedRequest = Aws4Signer.create().sign(awsRequest, signerParams);
+        }
+
+        // build final request to send
+        List<String> finalHeaders = new ArrayList<>();
+        for (final String name : signedRequest.headers().keySet()) {
+            for (final String value : signedRequest.headers().get(name)) {
+                finalHeaders.add(String.format("%s: %s", name, value));
+            }
+        }
+        for (final String name : unsignedHeaderMap.keySet()) {
+            for (final String value : unsignedHeaderMap.get(name)) {
+                finalHeaders.add(String.format("%s: %s", name, value));
+            }
+        }
+
+        if (preserveHeaderOrder) {
+            Map<String, Integer> headerOrderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            int i = 0;
+            for (final String header : allHeaders) {
+                headerOrderMap.putIfAbsent(splitHeader(header)[0], i++);
+            }
+            // sort new headers at the end
+            Collections.sort(finalHeaders, Comparator.comparingInt(h -> headerOrderMap.getOrDefault(splitHeader(h)[0], finalHeaders.size())));
+        }
+
+        // add verb line back in after sorting
+        finalHeaders.add(0, lineOne);
+
+        final byte[] requestBytes = helpers.buildHttpMessage(finalHeaders, body);
+        logger.debug("=======SIGNED REQUEST==========\n"+helpers.bytesToString(requestBytes));
+        logger.debug("=======END REQUEST=============");
+        return requestBytes;
+    }
+
+    public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final AWSProfile signingProfile)
+    {
+        return presignRequest(httpService, originalRequestBytes, signingProfile, PRESIGN_DURATION_SECONDS);
+    }
+
+    public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final AWSProfile signingProfile, final long durationSeconds)
+    {
+        return null;
     }
 
     @Override
@@ -1069,29 +1326,18 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 return;
             }
 
-            if (isAwsRequest(request)) {
+            if (isAws4Request(request)) {
+                final AWSProfile signingProfile = getSigningProfile(request.getHeaders());
 
-                // use default profile, if there is one. else, match profile based on access key id in the request
-                AWSSignedRequest signedRequest = new AWSSignedRequest(messageInfo, this);
-                final AWSProfile profile = customizeSignedRequest(signedRequest);
-                if (profile == null) {
-                    logger.error("Failed to apply custom settings to signed request");
+                if (signingProfile == null) {
+                    logger.error("Failed to get signing profile");
                     return;
                 }
 
-                AWSCredential credential = profile.getCredential();
-                if (credential == null) {
-                    // assume role failure
-                    logger.error("Failed to get credentials for profile: "+profile.getName());
-                    return;
-                }
-                else {
-                    byte[] requestBytes = signedRequest.getSignedRequestBytes(credential);
-                    if (requestBytes != null) {
-                        logger.info("Signed request with profile: " + profile);
-                        messageInfo.setComment("SigV4 "+profile.getName());
-                        messageInfo.setRequest(requestBytes);
-                    }
+                final byte[] requestBytes = signRequest(messageInfo.getHttpService(), messageInfo.getRequest(), signingProfile);
+                if (requestBytes != null) {
+                    messageInfo.setRequest(requestBytes);
+                    messageInfo.setComment(DISPLAY_NAME+signingProfile.getName());
                 }
             }
         }

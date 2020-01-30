@@ -232,7 +232,7 @@ public class AWSProfile implements Cloneable
         return null;
     }
 
-    public static ArrayList<AWSProfile> fromCredentialPath(final Path path, BurpExtender burp)
+    public static ArrayList<AWSProfile> fromCredentialPath(final Path path)
     {
         // parse credential file
         ArrayList<AWSProfile> profileList = new ArrayList<>();
@@ -273,7 +273,7 @@ public class AWSProfile implements Cloneable
                     }
                     profileList.add(newProfileBuilder.build());
                 } catch (IllegalArgumentException exc) {
-                    burp.logger.error(String.format("Failed to import profile [%s] from path %s: %s", name, path, exc.getMessage()));
+                    logger.error(String.format("Failed to import profile [%s] from path %s: %s", name, path, exc.getMessage()));
                 }
             }
         }

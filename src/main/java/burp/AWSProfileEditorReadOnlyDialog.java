@@ -17,9 +17,9 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
 
     public AWSProfile getProfile() { return editedProfile; }
 
-    public AWSProfileEditorReadOnlyDialog(Frame owner, String title, boolean modal, AWSProfile profile, BurpExtender burp)
+    public AWSProfileEditorReadOnlyDialog(Frame owner, String title, boolean modal, AWSProfile profile)
     {
-        super(owner, title, modal, profile, burp);
+        super(owner, title, modal, profile);
         this.okButton.removeActionListener(this.okButton.getActionListeners()[0]);
         this.okButton.addActionListener(new ActionListener()
         {

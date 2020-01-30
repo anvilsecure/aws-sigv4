@@ -32,15 +32,14 @@ public class AWSProfileImportDialog extends JDialog
     private static int NAME_COLUMN_INDEX = 1;
     private static int KEYID_COLUMN_INDEX = 2;
 
-    private BurpExtender burp;
+    private BurpExtender burp = BurpExtender.getBurp();
     private JTable profileTable;
     private JLabel hintLabel;
     private HashMap<String, NewAWSProfile> profileNameMap;
 
-    public AWSProfileImportDialog(Frame owner, String title, boolean modal, BurpExtender burp)
+    public AWSProfileImportDialog(Frame owner, String title, boolean modal)
     {
         super(owner, title, modal);
-        this.burp = burp;
         this.profileNameMap = new HashMap<>();
         setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
@@ -186,7 +185,7 @@ public class AWSProfileImportDialog extends JDialog
         GridBagConstraints c03 = new GridBagConstraints();
         c03.gridy = 3;
         hintLabel = new JLabel("<html><i>Ok to import selected profiles</i></html>");
-        hintLabel.setForeground(this.burp.textOrange);
+        hintLabel.setForeground(BurpExtender.textOrange);
         outerPanel.add(topButtonPanel, c00);
         outerPanel.add(profileScrollPane, c01);
         outerPanel.add(hintLabel, c02);
@@ -194,7 +193,7 @@ public class AWSProfileImportDialog extends JDialog
 
         add(outerPanel);
         pack();
-        setLocationRelativeTo(burp.getUiComponent());
+        setLocationRelativeTo(BurpExtender.getBurp().getUiComponent());
     }
 
     public void addSelectedProfiles()
@@ -270,7 +269,7 @@ public class AWSProfileImportDialog extends JDialog
         if (!Files.exists(credPath)) {
             burp.logger.error(String.format("Attempted to import credentials from non-existent file: %s", credPath));
         }
-        ArrayList<AWSProfile> profiles = AWSProfile.fromCredentialPath(credPath, this.burp);
+        ArrayList<AWSProfile> profiles = AWSProfile.fromCredentialPath(credPath);
         burp.logger.info(String.format("Importing %d credentials from: %s", profiles.size(), credPath));
         updateImportTable(profiles, credPath.toString());
     }

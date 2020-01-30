@@ -7,23 +7,19 @@ this class provides a non-editable request tab for displaying the request after 
  */
 public class AWSMessageEditorTab implements IMessageEditorTab
 {
-    private final String TAB_NAME = "SigV4";
     private IMessageEditorController controller;
-    private BurpExtender burp;
-    private LogWriter logger;
+    private BurpExtender burp = BurpExtender.getBurp();
     private ITextEditor messageTextEditor;
     private byte[] content;
 
-    public AWSMessageEditorTab(IMessageEditorController controller, boolean editable, BurpExtender burp)
+    public AWSMessageEditorTab(IMessageEditorController controller, boolean editable)
     {
         this.controller = controller;
-        this.burp = burp;
-        this.logger = burp.logger;
     }
 
     @Override
     public String getTabCaption() {
-        return TAB_NAME;
+        return BurpExtender.DISPLAY_NAME;
     }
 
     @Override
@@ -41,7 +37,7 @@ public class AWSMessageEditorTab implements IMessageEditorTab
             // this is because isEnabled() is only called once, so toggling in-scope only or signing enabled will have no
             // effect on current editor tabs.
             IRequestInfo requestInfo = this.burp.helpers.analyzeRequest(content);
-            return BurpExtender.isAwsRequest(requestInfo);
+            return BurpExtender.isAws4Request(requestInfo);
         }
         return false;
     }
@@ -49,10 +45,10 @@ public class AWSMessageEditorTab implements IMessageEditorTab
     @Override
     public void setMessage(byte[] content, boolean isRequest) {
         if (this.burp.isSigningEnabled()) {
+            IRequestInfo requestInfo = this.burp.helpers.analyzeRequest(this.controller.getHttpService(), content);
 
             // if request is not in scope, display a warning instead
             if (this.burp.isInScopeOnlyEnabled()) {
-                IRequestInfo requestInfo = this.burp.helpers.analyzeRequest(this.controller.getHttpService(), content);
                 if (!this.burp.callbacks.isInScope(requestInfo.getUrl())) {
                     this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Request URL is not in scope: "+requestInfo.getUrl()));
                     return;
@@ -62,14 +58,13 @@ public class AWSMessageEditorTab implements IMessageEditorTab
             this.content = content;
 
             try {
-                AWSSignedRequest signedRequest = new AWSSignedRequest(this.controller.getHttpService(), this.content, this.burp);
-                final AWSProfile profile = this.burp.customizeSignedRequest(signedRequest);
-                if (profile == null) {
-                    this.messageTextEditor.setText(this.burp.helpers.stringToBytes(
-                            "No profile found for keyId: " + signedRequest.getAccessKeyId() + ". Either add it or set a default profile."));
+                AWSProfile profile = BurpExtender.getBurp().getSigningProfile(requestInfo.getHeaders());
+                final byte[] requestBytes = BurpExtender.getBurp().signRequest(this.controller.getHttpService(), this.content, profile);
+                if (requestBytes == null) {
+                    this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Failed to sign request with profile: "+profile.getName()));
                     return;
                 }
-                this.messageTextEditor.setText(signedRequest.getSignedRequestBytes(profile.getCredential()));
+                this.messageTextEditor.setText(requestBytes);
                 return;
             } catch (Exception exc) {
             }
