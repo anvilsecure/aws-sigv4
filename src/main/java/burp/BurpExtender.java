@@ -346,7 +346,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
                     try {
                         GetCallerIdentityResponse response = stsClient.getCallerIdentity();
-                        JDialog dialog = new ProfileTestDialog(null, "sts:GetCallerIdentity: "+profile.getName(), false, response);
+                        JDialog dialog = new ProfileTestDialog(null, profile, false, response);
                         dialog.setVisible(true);
                     } catch (StsException exc) {
                         JOptionPane.showMessageDialog(getUiComponent(), exc.getMessage());

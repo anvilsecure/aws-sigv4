@@ -4,35 +4,35 @@ import software.amazon.awssdk.services.sts.model.GetCallerIdentityResponse;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 
 public class ProfileTestDialog extends JDialog
 {
-    public ProfileTestDialog(Frame owner, String title, boolean modal, GetCallerIdentityResponse response)
+    private String encode(final String label)
     {
-        super(owner, title, modal);
+        return label.replace("<", "&lt;").replace(">", "&gt;");
+    }
 
-        JPanel outerPanel = new JPanel();
-        outerPanel.setLayout(new BoxLayout(outerPanel, BoxLayout.PAGE_AXIS));
+    public ProfileTestDialog(Frame owner, final AWSProfile profile, boolean modal, final GetCallerIdentityResponse response)
+    {
+        super(owner, profile.getName(), modal);
 
-        outerPanel.add(new JLabel(String.format("<html><b>AccountId:</b> %s</html>", response.account())));
-        outerPanel.add(new JLabel(String.format("<html><b>Arn:</b> %s</html>", response.arn())));
-        outerPanel.add(new JLabel(String.format("<html><b>UserId:</b> %s</html>", response.userId())));
+        JPanel contentPanel = new JPanel();
+        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.PAGE_AXIS));
 
-        JButton closeButton = new JButton("close");
-        closeButton.addActionListener(new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent actionEvent)
-            {
-                setVisible(false);
-                dispose();
-            }
+        contentPanel.add(new JLabel(String.format("<html><b>Profile:</b>&nbsp;%s</html>", encode(profile.getName()))));
+        contentPanel.add(new JLabel(String.format("<html><b>AccountId:</b>&nbsp;%s</html>", encode(response.account()))));
+        contentPanel.add(new JLabel(String.format("<html><b>Arn:</b>&nbsp;%s</html>", encode(response.arn()))));
+        contentPanel.add(new JLabel(String.format("<html><b>UserId:</b>&nbsp;%s</html>", encode(response.userId()))));
+
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(actionEvent -> {
+            setVisible(false);
+            dispose();
         });
-        outerPanel.add(closeButton);
+        contentPanel.add(closeButton);
 
-        add(outerPanel);
+        JScrollPane outerScrollPane = new JScrollPane(contentPanel);
+        add(outerScrollPane);
         pack();
         setLocationRelativeTo(SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()));
     }
