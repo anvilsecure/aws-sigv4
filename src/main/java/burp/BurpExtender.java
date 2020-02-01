@@ -41,6 +41,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
@@ -132,15 +133,72 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         otherSettingsPanel.add(new JLabel("Default Profile"));
         otherSettingsPanel.add(defaultProfileComboBox);
 
+
+        // import/export settings json with dialogs
+        JPanel importExportSettingsPanel = new JPanel();
+        JButton settingsImportButton = new JButton("Import");
+        importExportSettingsPanel.add(settingsImportButton);
+        settingsImportButton.addActionListener(actionEvent -> {
+            JDialog dialog = new JDialog((Frame)null, "Import Settings Json", true);
+            JPanel mainPanel = new JPanel();
+            mainPanel.setLayout(new BorderLayout());
+            JTextArea textPanel = new JTextArea();
+            JScrollPane scrollPane = new JScrollPane(textPanel);
+            mainPanel.add(scrollPane, BorderLayout.CENTER);
+            JPanel buttonPanel = new JPanel();
+            JButton okButton = new JButton("Ok");
+            okButton.addActionListener(actionEvent1 -> {
+                importExtensionSettingsFromJson(textPanel.getText());
+                dialog.setVisible(false);
+            });
+            buttonPanel.add(okButton);
+            JButton cancelButton = new JButton("Cancel");
+            cancelButton.addActionListener(actionEvent1 -> {
+                dialog.setVisible(false);
+            });
+            buttonPanel.add(cancelButton);
+            mainPanel.add(buttonPanel, BorderLayout.PAGE_END);
+            dialog.add(mainPanel);
+            dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+            dialog.setLocationRelativeTo(SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()));
+            dialog.setVisible(true);
+        });
+        JButton settingsExportButton = new JButton("Export");
+        importExportSettingsPanel.add(settingsExportButton);
+        settingsExportButton.addActionListener(actionEvent -> {
+            // display settings json in a new dialog
+            JDialog dialog = new JDialog((Frame)null, "Export Settings Json", true);
+            JPanel mainPanel = new JPanel();
+            mainPanel.setLayout(new BorderLayout());
+            JTextArea textPanel = new JTextArea();
+            textPanel.setText(exportExtensionSettingsToJson());
+            textPanel.setEditable(false);
+            JScrollPane scrollPane = new JScrollPane(textPanel);
+            mainPanel.add(scrollPane, BorderLayout.CENTER);
+            JButton closeButton = new JButton("Close");
+            closeButton.addActionListener(actionEvent1 -> {
+                dialog.setVisible(false);
+            });
+            mainPanel.add(closeButton, BorderLayout.PAGE_END);
+            dialog.add(mainPanel);
+            dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+            dialog.pack();
+            dialog.setLocationRelativeTo(SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()));
+            dialog.setVisible(true);
+        });
+
+
         GridBagConstraints c00 = new GridBagConstraints(); c00.anchor = GridBagConstraints.FIRST_LINE_START; c00.gridy = 0; c00.gridwidth = 2;
         GridBagConstraints c01 = new GridBagConstraints(); c01.anchor = GridBagConstraints.FIRST_LINE_START; c01.gridy = 1; c01.gridwidth = 2; c01.insets = new Insets(10, 0, 10, 0);
         GridBagConstraints c02 = new GridBagConstraints(); c02.anchor = GridBagConstraints.FIRST_LINE_START; c02.gridy = 2;
         GridBagConstraints c03 = new GridBagConstraints(); c03.anchor = GridBagConstraints.FIRST_LINE_START; c03.gridy = 3;
+        GridBagConstraints c04 = new GridBagConstraints(); c04.anchor = GridBagConstraints.FIRST_LINE_START; c04.gridy = 4;
 
         globalSettingsPanel.add(settingsLabel, c00);
         globalSettingsPanel.add(new JLabel("<html>Change plugin behavior. Set <i>Default Profile</i> to force signing of all requests with the specified profile credentials."), c01);
         globalSettingsPanel.add(checkBoxPanel, c02);
         globalSettingsPanel.add(otherSettingsPanel, c03);
+        //globalSettingsPanel.add(importExportSettingsPanel, c04);
 
         //
         // status label
@@ -205,10 +263,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JPanel customHeadersButtonPanel = new JPanel();
         customHeadersButtonPanel.setLayout(new GridLayout(3, 1));
         JButton addCustomHeaderButton = new JButton("Add");
-        //JButton editCustomHeaderButton = new JButton("Edit");
         JButton removeCustomHeaderButton = new JButton("Remove");
         customHeadersButtonPanel.add(addCustomHeaderButton);
-        //customHeadersButtonPanel.add(editCustomHeaderButton); // edit in-place in table
         customHeadersButtonPanel.add(removeCustomHeaderButton);
 
         final String[] headersColumnNames = {"Name", "Value"};
@@ -400,7 +456,21 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             public void actionPerformed(ActionEvent actionEvent)
             {
                 DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
-                model.addRow(new Object[]{"", ""});
+                int i;
+                for (i = 0; i < model.getRowCount(); i++) {
+                    final String name = ((String) model.getValueAt(i, 0)).trim();
+                    if (name.length() == 0) {
+                        // do not add more rows if an empty row exists
+                        break;
+                    }
+                }
+                if (i == model.getRowCount()) {
+                    model.addRow(new Object[]{"", ""});
+                }
+                customHeadersTable.clearSelection();
+                customHeadersTable.addRowSelectionInterval(i, i);
+                customHeadersTable.addColumnSelectionInterval(0, 0);
+                customHeadersTable.editCellAt(i, 0);
             }
         });
         removeCustomHeaderButton.addActionListener(new ActionListener()
@@ -409,11 +479,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             public void actionPerformed(ActionEvent actionEvent)
             {
                 DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
-                int[] rowIndeces = customHeadersTable.getSelectedRows();
-                Arrays.sort(rowIndeces);
-                for (int i = rowIndeces.length - 1; i >= 0; i--) {
-                    model.removeRow(rowIndeces[i]);
-                }
+                // remove editor or the table locks up if a cell is being edited
+                customHeadersTable.removeEditor();
+                // remove rows in reverse order or larger indices will become invalid before removing
+                Arrays.stream(customHeadersTable.getSelectedRows())
+                        .boxed()
+                        .sorted(Comparator.reverseOrder())
+                        .forEach(model::removeRow);
             }
         });
 
@@ -457,6 +529,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     }
     public boolean isInScopeOnlyEnabled() { return this.inScopeOnlyCheckBox.isSelected(); }
 
+    private void setLogLevel(final int level)
+    {
+        this.logger.setLevel(level);
+        // logger is created before UI components are initialized.
+        if (this.logLevelComboBox != null) {
+            this.logLevelComboBox.setSelectedIndex(logger.getLevel());
+        }
+    }
 
     @Override
     public void registerExtenderCallbacks(IBurpExtenderCallbacks callbacks)
@@ -472,7 +552,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.logger.configure(callbacks.getStdout(), callbacks.getStderr(), LogWriter.DEFAULT_LEVEL);
         final String setting = this.callbacks.loadExtensionSetting(SETTING_LOG_LEVEL);
         if (setting != null) {
-            this.logger.setLevel(Integer.parseInt(setting));
+            setLogLevel(Integer.parseInt(setting));
         }
 
         this.profileKeyIdMap = new HashMap<>();
@@ -517,15 +597,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         return Paths.get(in.nextString());
                     }
                 })
+                .setPrettyPrinting() // not necessary...
                 .create();
     }
 
-    private void saveExtensionSettings()
+    private String exportExtensionSettingsToJson()
     {
-        this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(this.logger.getLevel()));
-        this.callbacks.saveExtensionSetting(SETTING_VERSION, EXTENSION_VERSION);
-
         HashMap<String, Object> settings = new HashMap<>();
+        settings.put(SETTING_LOG_LEVEL, this.logger.getLevel());
+        settings.put(SETTING_VERSION, EXTENSION_VERSION);
         settings.put(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected());
         settings.put(SETTING_EXTENSION_ENABLED, this.signingEnabledCheckBox.isSelected());
         settings.put(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
@@ -534,40 +614,35 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         settings.put(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, getAdditionalSignedHeadersFromUI());
         settings.put(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected());
         settings.put(SETTING_PRESERVE_HEADER_ORDER, this.preserveHeaderOrder);
-        this.callbacks.saveExtensionSetting(BURP_SETTINGS_KEY, new Gson().toJson(settings));
-
         if (this.persistProfilesCheckBox.isSelected()) {
-            Gson gson = getGsonSerializer();
-            this.callbacks.saveExtensionSetting(SETTING_PROFILES, gson.toJson(this.profileNameMap));
+            settings.put(SETTING_PROFILES, this.profileNameMap);
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
         }
-        else {
-            this.callbacks.saveExtensionSetting(SETTING_PROFILES, "{}");
-        }
-
+        final String jsonString = getGsonSerializer().toJson(settings);
+        return jsonString;
     }
 
-    private void loadExtensionSettings()
+    private void importExtensionSettingsFromJson(final String jsonString)
     {
-        // plugin version that added the settings. in the future use this to migrate settings.
-        final String pluginVersion = this.callbacks.loadExtensionSetting(SETTING_VERSION);
-        if (pluginVersion != null)
-            logger.info("Found settings for version "+pluginVersion);
-        else
-            logger.info("Found settings for version < 1.2.0");
+        JsonObject settings;
+        try {
+            settings = new Gson().fromJson(jsonString, JsonObject.class);
+        } catch (JsonParseException exc) {
+            logger.error("Failed to parse Json settings. Using defaults.");
+            return;
+        }
 
-        // load saved profiles
-        final String profilesJsonString = this.callbacks.loadExtensionSetting(SETTING_PROFILES);
-        if (profilesJsonString != null && !profilesJsonString.equals("")) {
-            Gson gson = getGsonSerializer();
+        if (settings.has(SETTING_LOG_LEVEL))
+            setLogLevel(settings.get(SETTING_LOG_LEVEL).getAsInt());
+
+        // load profiles
+        if (settings.has(SETTING_PROFILES)) {
             final Type hashMapType = new TypeToken<HashMap<String, AWSProfile>>(){}.getType();
             Map<String, AWSProfile> profileMap;
             try {
-                profileMap = gson.fromJson(profilesJsonString, hashMapType);
+                profileMap = getGsonSerializer().fromJson(settings.get(SETTING_PROFILES), hashMapType);
             } catch (JsonParseException exc) {
                 logger.error("Failed to parse profile JSON");
-                // overwrite invalid settings
-                this.callbacks.saveExtensionSetting(SETTING_PROFILES, "{}");
                 profileMap = new HashMap<>();
             }
             for (final String name : profileMap.keySet()) {
@@ -579,52 +654,75 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         }
 
+        if (settings.has(SETTING_DEFAULT_PROFILE_NAME))
+            setDefaultProfileName(settings.get(SETTING_DEFAULT_PROFILE_NAME).getAsString());
+        else
+            setDefaultProfileName(NO_DEFAULT_PROFILE);
+
+        if (settings.has(SETTING_PERSISTENT_PROFILES))
+            this.persistProfilesCheckBox.setSelected(settings.get(SETTING_PERSISTENT_PROFILES).getAsBoolean());
+        else
+            this.persistProfilesCheckBox.setSelected(false);
+
+        if (settings.has(SETTING_EXTENSION_ENABLED))
+            this.signingEnabledCheckBox.setSelected(settings.get(SETTING_EXTENSION_ENABLED).getAsBoolean());
+        else
+            this.signingEnabledCheckBox.setSelected(true);
+
+        if (settings.has(SETTING_CUSTOM_HEADERS)) {
+            List<String> customHeaders = new ArrayList<>();
+            for (final JsonElement header : settings.get(SETTING_CUSTOM_HEADERS).getAsJsonArray()) {
+                customHeaders.add(header.getAsString());
+            }
+            setCustomHeadersInUI(customHeaders);
+        }
+
+        if (settings.has(SETTING_CUSTOM_HEADERS_OVERWRITE))
+            this.customHeadersOverwriteCheckbox.setSelected(settings.get(SETTING_CUSTOM_HEADERS_OVERWRITE).getAsBoolean());
+        else
+            this.customHeadersOverwriteCheckbox.setSelected(false);
+
+        if (settings.has(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES)) {
+            List<String> additionalHeaders = new ArrayList<>();
+            for (JsonElement header : settings.get(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES).getAsJsonArray()) {
+                additionalHeaders.add(header.getAsString());
+            }
+            this.additionalSignedHeadersField.setText(String.join(", ", additionalHeaders));
+        }
+
+        if (settings.has(SETTING_IN_SCOPE_ONLY))
+            this.inScopeOnlyCheckBox.setSelected(settings.get(SETTING_IN_SCOPE_ONLY).getAsBoolean());
+        else
+            this.inScopeOnlyCheckBox.setSelected(false);
+
+        if (settings.has(SETTING_PRESERVE_HEADER_ORDER))
+            this.preserveHeaderOrder = settings.get(SETTING_PRESERVE_HEADER_ORDER).getAsBoolean();
+    }
+
+    private void saveExtensionSettings()
+    {
+        // save these with their own key since they may be required before the other settings are loaded
+        this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(this.logger.getLevel()));
+        this.callbacks.saveExtensionSetting(SETTING_VERSION, EXTENSION_VERSION);
+        this.callbacks.saveExtensionSetting(BURP_SETTINGS_KEY, exportExtensionSettingsToJson());
+    }
+
+    private void loadExtensionSettings()
+    {
+        // plugin version that added the settings. in the future use this to migrate settings.
+        final String pluginVersion = this.callbacks.loadExtensionSetting(SETTING_VERSION);
+        if (pluginVersion != null)
+            logger.info("Found settings for version "+pluginVersion);
+        else
+            logger.info("Found settings for version < 1.2.0");
+
         final String jsonSettingsString = this.callbacks.loadExtensionSetting(BURP_SETTINGS_KEY);
         if (jsonSettingsString == null || jsonSettingsString.equals("")) {
             logger.info("No plugin settings found");
         }
         else {
-            JsonObject settings = new Gson().fromJson(jsonSettingsString, JsonObject.class);
-            if (settings.has(SETTING_DEFAULT_PROFILE_NAME))
-                setDefaultProfileName(settings.get(SETTING_DEFAULT_PROFILE_NAME).getAsString());
-            else
-                setDefaultProfileName(NO_DEFAULT_PROFILE);
-            if (settings.has(SETTING_PERSISTENT_PROFILES))
-                this.persistProfilesCheckBox.setSelected(settings.get(SETTING_PERSISTENT_PROFILES).getAsBoolean());
-            else
-                this.persistProfilesCheckBox.setSelected(false);
-            if (settings.has(SETTING_EXTENSION_ENABLED))
-                this.signingEnabledCheckBox.setSelected(settings.get(SETTING_EXTENSION_ENABLED).getAsBoolean());
-            else
-                 this.signingEnabledCheckBox.setSelected(true);
-
-            if (settings.has(SETTING_CUSTOM_HEADERS)) {
-                List<String> customHeaders = new ArrayList<>();
-                for (final JsonElement header : settings.get(SETTING_CUSTOM_HEADERS).getAsJsonArray()) {
-                    customHeaders.add(header.getAsString());
-                }
-                setCustomHeadersInUI(customHeaders);
-            }
-
-            if (settings.has(SETTING_CUSTOM_HEADERS_OVERWRITE))
-                this.customHeadersOverwriteCheckbox.setSelected(settings.get(SETTING_CUSTOM_HEADERS_OVERWRITE).getAsBoolean());
-            else
-                this.customHeadersOverwriteCheckbox.setSelected(false);
-            if (settings.has(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES)) {
-                List<String> additionalHeaders = new ArrayList<>();
-                for (JsonElement header : settings.get(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES).getAsJsonArray()) {
-                    additionalHeaders.add(header.getAsString());
-                }
-                this.additionalSignedHeadersField.setText(String.join(", ", additionalHeaders));
-            }
-            if (settings.has(SETTING_IN_SCOPE_ONLY))
-                this.inScopeOnlyCheckBox.setSelected(settings.get(SETTING_IN_SCOPE_ONLY).getAsBoolean());
-            else
-                this.inScopeOnlyCheckBox.setSelected(false);
-            if (settings.has(SETTING_PRESERVE_HEADER_ORDER))
-                this.preserveHeaderOrder = settings.get(SETTING_PRESERVE_HEADER_ORDER).getAsBoolean();
+            importExtensionSettingsFromJson(jsonSettingsString);
         }
-
     }
 
     @Override
@@ -1050,6 +1148,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private void setCustomHeadersInUI(final List<String> customHeaders)
     {
         DefaultTableModel model = (DefaultTableModel) customHeadersTable.getModel();
+        model.setRowCount(0);
         for (final String header : customHeaders) {
             final String[] tokens = header.split("[\\s:]+");
             if (tokens.length == 1) {

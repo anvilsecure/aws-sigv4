@@ -176,105 +176,89 @@ public class AWSProfileEditorDialog extends JDialog
         outerPanel.add(statusLabel, newConstraint(0, outerPanelY++, 2, 1));
         outerPanel.add(buttonPanel, newConstraint(0, outerPanelY++, 2, 1));
 
-        ActionListener providerButtonActionListener = new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent actionEvent) {
-                staticCredentialsPanel.setVisible(staticProviderRadioButton.isSelected());
-                rolePanel.setVisible(assumeRoleProviderRadioButton.isSelected());
-                httpPanel.setVisible(httpProviderRadioButton.isSelected());
-                if (actionEvent.getSource().equals(assumeRoleProviderRadioButton)) {
-                    staticCredentialsPanel.setVisible(true);
-                }
-                pack();
+        ActionListener providerButtonActionListener = actionEvent -> {
+            staticCredentialsPanel.setVisible(staticProviderRadioButton.isSelected());
+            rolePanel.setVisible(assumeRoleProviderRadioButton.isSelected());
+            httpPanel.setVisible(httpProviderRadioButton.isSelected());
+            if (actionEvent.getSource().equals(assumeRoleProviderRadioButton)) {
+                staticCredentialsPanel.setVisible(true);
             }
+            pack();
         };
         this.staticProviderRadioButton.addActionListener(providerButtonActionListener);
         this.assumeRoleProviderRadioButton.addActionListener(providerButtonActionListener);
         this.httpProviderRadioButton.addActionListener(providerButtonActionListener);
 
-        httpProviderCaPathButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent actionEvent) {
-                JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
-                chooser.setFileHidingEnabled(false);
-                if (chooser.showOpenDialog(burp.getUiComponent()) == JFileChooser.APPROVE_OPTION) {
-                    httpProviderCaPathField.setText(chooser.getSelectedFile().getPath());
-                }
+        httpProviderCaPathButton.addActionListener(actionEvent -> {
+            JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
+            chooser.setFileHidingEnabled(false);
+            if (chooser.showOpenDialog(burp.getUiComponent()) == JFileChooser.APPROVE_OPTION) {
+                httpProviderCaPathField.setText(chooser.getSelectedFile().getPath());
             }
         });
 
-        cancelButton.addActionListener(new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent actionEvent)
-            {
+        cancelButton.addActionListener(actionEvent -> {
+            setVisible(false);
+            dispose();
+        });
+        okButton.addActionListener(actionEvent -> {
+            AWSAssumeRole assumeRole = null;
+            final String accessKeyId = accessKeyIdTextField.getText();
+            final String secretKey = secretKeyTextField.getText();
+            final String sessionToken = sessionTokenTextField.getText();
+
+            try {
+                if (profile != null && !roleArnTextField.getText().equals("")) {
+                    // edit dialog
+                    final AWSPermanentCredential permanentCredential = new AWSPermanentCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
+                    if (profile.getAssumeRole() != null) {
+                        assumeRole = new AWSAssumeRole.Builder(profile.getAssumeRole())
+                                .withRoleArn(roleArnTextField.getText())
+                                .withCredential(permanentCredential)
+                                .tryExternalId(externalIdTextField.getText())
+                                .tryRoleSessionName(sessionNameTextField.getText())
+                                .build();
+                    }
+                    else {
+                        assumeRole = new AWSAssumeRole.Builder(roleArnTextField.getText(), permanentCredential)
+                                .tryExternalId(externalIdTextField.getText())
+                                .tryRoleSessionName(sessionNameTextField.getText())
+                                .build();
+                    }
+                }
+
+                AWSProfile.Builder newProfileBuilder = new AWSProfile.Builder(nameTextField.getText())
+                        .withRegion(regionTextField.getText())
+                        .withService(serviceTextField.getText());
+                if (!profileKeyIdTextField.getText().equals(""))
+                    newProfileBuilder.withAccessKeyId(profileKeyIdTextField.getText());
+
+                if (!httpProviderUrlField.getText().equals("") || !httpProviderCaPathField.getText().equals("")) {
+                    newProfileBuilder.withCredentialProvider(new AWSHttpProvider(httpProviderUrlField.getText(), httpProviderCaPathField.getText()),
+                            httpProviderRadioButton.isSelected() ? AWSProfile.DEFAULT_HTTP_PRIORITY : AWSProfile.DISABLED_PRIORITY);
+                }
+
+                if (assumeRole != null)
+                    newProfileBuilder.withCredentialProvider(assumeRole, assumeRoleProviderRadioButton.isSelected() ? AWSProfile.DEFAULT_ASSUMEROLE_PRIORITY : AWSProfile.DISABLED_PRIORITY);
+
+                // if any cred fields are specified, attempt to use them.
+                if (!accessKeyId.equals("") || !secretKey.equals("") || !sessionToken.equals("")) {
+                    AWSCredential credential = new AWSPermanentCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
+                    if (!sessionToken.equals(""))
+                        credential = new AWSTemporaryCredential(accessKeyId, secretKey, sessionToken, Instant.now().getEpochSecond() + 900);
+                    newProfileBuilder.withCredentialProvider(new AWSStaticCredentialProvider(credential), AWSProfile.DEFAULT_STATIC_PRIORITY);
+                }
+
+                final AWSProfile newProfile = newProfileBuilder.build();
+                if (newProfile.getCredentialProviderCount() <= 0) {
+                    throw new IllegalArgumentException("Must provide at least 1 authentication method");
+                }
+                burp.updateProfile(profile, newProfile);
+                newProfileName = newProfile.getName();
                 setVisible(false);
                 dispose();
-            }
-        });
-        okButton.addActionListener(new ActionListener()
-        {
-            @Override
-            public void actionPerformed(ActionEvent actionEvent)
-            {
-                AWSAssumeRole assumeRole = null;
-                final String accessKeyId = accessKeyIdTextField.getText();
-                final String secretKey = secretKeyTextField.getText();
-                final String sessionToken = sessionTokenTextField.getText();
-
-                try {
-                    if (profile != null && !roleArnTextField.getText().equals("")) {
-                        // edit dialog
-                        final AWSPermanentCredential permanentCredential = new AWSPermanentCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
-                        if (profile.getAssumeRole() != null) {
-                            assumeRole = new AWSAssumeRole.Builder(profile.getAssumeRole())
-                                    .withRoleArn(roleArnTextField.getText())
-                                    .withCredential(permanentCredential)
-                                    .tryExternalId(externalIdTextField.getText())
-                                    .tryRoleSessionName(sessionNameTextField.getText())
-                                    .build();
-                        }
-                        else {
-                            assumeRole = new AWSAssumeRole.Builder(roleArnTextField.getText(), permanentCredential)
-                                    .tryExternalId(externalIdTextField.getText())
-                                    .tryRoleSessionName(sessionNameTextField.getText())
-                                    .build();
-                        }
-                    }
-
-                    AWSProfile.Builder newProfileBuilder = new AWSProfile.Builder(nameTextField.getText())
-                            .withRegion(regionTextField.getText())
-                            .withService(serviceTextField.getText());
-                    if (!profileKeyIdTextField.getText().equals(""))
-                        newProfileBuilder.withAccessKeyId(profileKeyIdTextField.getText());
-
-                    if (!httpProviderUrlField.getText().equals("") || !httpProviderCaPathField.getText().equals("")) {
-                        newProfileBuilder.withCredentialProvider(new AWSHttpProvider(httpProviderUrlField.getText(), httpProviderCaPathField.getText()),
-                                httpProviderRadioButton.isSelected() ? AWSProfile.DEFAULT_HTTP_PRIORITY : AWSProfile.DISABLED_PRIORITY);
-                    }
-
-                    if (assumeRole != null)
-                        newProfileBuilder.withCredentialProvider(assumeRole, assumeRoleProviderRadioButton.isSelected() ? AWSProfile.DEFAULT_ASSUMEROLE_PRIORITY : AWSProfile.DISABLED_PRIORITY);
-
-                    // if any cred fields are specified, attempt to use them.
-                    if (!accessKeyId.equals("") || !secretKey.equals("") || !sessionToken.equals("")) {
-                        AWSCredential credential = new AWSPermanentCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
-                        if (!sessionToken.equals(""))
-                            credential = new AWSTemporaryCredential(accessKeyId, secretKey, sessionToken, Instant.now().getEpochSecond() + 900);
-                        newProfileBuilder.withCredentialProvider(new AWSStaticCredentialProvider(credential), AWSProfile.DEFAULT_STATIC_PRIORITY);
-                    }
-
-                    final AWSProfile newProfile = newProfileBuilder.build();
-                    if (newProfile.getCredentialProviderCount() <= 0) {
-                        throw new IllegalArgumentException("Must provide at least 1 authentication method");
-                    }
-                    burp.updateProfile(profile, newProfile);
-                    newProfileName = newProfile.getName();
-                    setVisible(false);
-                    dispose();
-                } catch (IllegalArgumentException exc) {
-                    setStatusLabel("Invalid settings: " + exc.getMessage());
-                }
+            } catch (IllegalArgumentException exc) {
+                setStatusLabel("Invalid settings: " + exc.getMessage());
             }
         });
 

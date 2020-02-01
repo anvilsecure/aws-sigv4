@@ -10,7 +10,6 @@ public class LogWriter
     final public static int ERROR_LEVEL = 2;
     final public static int DEFAULT_LEVEL = ERROR_LEVEL;
     final public static int FATAL_LEVEL = 3;
-    final public static int NULL_LEVEL = 100;
 
     private PrintWriter out;
     private PrintWriter err;
@@ -20,7 +19,7 @@ public class LogWriter
 
     private LogWriter()
     {
-        this.logLevel = NULL_LEVEL;
+        this.logLevel = DEFAULT_LEVEL;
     }
 
     public static LogWriter getLogger()
@@ -52,7 +51,11 @@ public class LogWriter
         this.logLevel = logLevel;
     }
 
-    public void setLevel(int level) { this.logLevel = level; }
+    public void setLevel(int level)
+    {
+        if (level >= DEBUG_LEVEL && level <= FATAL_LEVEL)
+            this.logLevel = level;
+    }
 
     public int getLevel() { return this.logLevel; }
 
