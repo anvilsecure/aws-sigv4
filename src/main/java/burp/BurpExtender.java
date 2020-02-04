@@ -41,7 +41,6 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
@@ -140,8 +139,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         importExportSettingsPanel.add(settingsImportButton);
         settingsImportButton.addActionListener(actionEvent -> {
             JDialog dialog = new JDialog((Frame)null, "Import Settings Json", true);
-            JPanel mainPanel = new JPanel();
-            mainPanel.setLayout(new BorderLayout());
+            JPanel mainPanel = new JPanel(new BorderLayout());
             JTextArea textPanel = new JTextArea();
             JScrollPane scrollPane = new JScrollPane(textPanel);
             mainPanel.add(scrollPane, BorderLayout.CENTER);
@@ -160,7 +158,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             mainPanel.add(buttonPanel, BorderLayout.PAGE_END);
             dialog.add(mainPanel);
             dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-            dialog.setLocationRelativeTo(SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()));
+            // set dialog location and size
+            final Point burpLocation = SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()).getLocation();
+            dialog.setLocation(burpLocation);
+            dialog.setPreferredSize(SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()).getBounds().getSize());
+            dialog.pack();
             dialog.setVisible(true);
         });
         JButton settingsExportButton = new JButton("Export");
@@ -168,22 +170,34 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         settingsExportButton.addActionListener(actionEvent -> {
             // display settings json in a new dialog
             JDialog dialog = new JDialog((Frame)null, "Export Settings Json", true);
-            JPanel mainPanel = new JPanel();
-            mainPanel.setLayout(new BorderLayout());
+            JPanel mainPanel = new JPanel(new BorderLayout());
             JTextArea textPanel = new JTextArea();
             textPanel.setText(exportExtensionSettingsToJson());
             textPanel.setEditable(false);
             JScrollPane scrollPane = new JScrollPane(textPanel);
             mainPanel.add(scrollPane, BorderLayout.CENTER);
+            JPanel buttonPanel = new JPanel();
             JButton closeButton = new JButton("Close");
             closeButton.addActionListener(actionEvent1 -> {
                 dialog.setVisible(false);
             });
-            mainPanel.add(closeButton, BorderLayout.PAGE_END);
+            buttonPanel.add(closeButton);
+            JButton copyToClipboardButton = new JButton("Copy to clipboard");
+            copyToClipboardButton.addActionListener(actionEvent12 -> {
+                Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                clipboard.setContents(new StringSelection(textPanel.getText()), null);
+            });
+            buttonPanel.add(copyToClipboardButton);
+            mainPanel.add(buttonPanel, BorderLayout.PAGE_END);
             dialog.add(mainPanel);
             dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+            // place dialog in upper left of burp window
+            final Point burpLocation = SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()).getLocation();
+            dialog.setLocation(burpLocation);
+            // make sure dialog height doesn't exceed burp window height
+            final int height = SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()).getBounds().getSize().height;
             dialog.pack();
-            dialog.setLocationRelativeTo(SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()));
+            dialog.setSize(dialog.getSize().width, height);
             dialog.setVisible(true);
         });
 
@@ -198,7 +212,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         globalSettingsPanel.add(new JLabel("<html>Change plugin behavior. Set <i>Default Profile</i> to force signing of all requests with the specified profile credentials."), c01);
         globalSettingsPanel.add(checkBoxPanel, c02);
         globalSettingsPanel.add(otherSettingsPanel, c03);
-        //globalSettingsPanel.add(importExportSettingsPanel, c04);
+        globalSettingsPanel.add(importExportSettingsPanel, c04);
 
         //
         // status label
@@ -806,6 +820,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 // assume sigv4 if any values were successfully parsed from the authorization header
                 final boolean isSigV4 = authorizationMap.values().stream().anyMatch(v -> v.length() > 0);
 
+                //TODO presigned URLs are not limited to s3/GET
                 if ((messages.length > 0) && requestInfo.getMethod().toUpperCase().equals("GET") && authorizationMap.get("service").toLowerCase().equals("s3")) {
                     JMenuItem signedUrlItem = new JMenuItem("Copy Signed URL");
                     signedUrlItem.addActionListener(new ActionListener()
@@ -1317,15 +1332,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         // s3 will complain about duplicate headers that the signer itself adds (e.g. X-Amz-Date)
         boolean signedPayload = false;
         if (service.toLowerCase().equals("s3")) {
-            for (final String name : signedHeaderMap.keySet().stream().collect(Collectors.toList())) {
-                if (name.toLowerCase().startsWith("x-amz-")) {
-                    // check if original request had a signed payload
-                    if (name.toLowerCase().equals("x-amz-content-sha256")) {
-                        signedPayload = !signedHeaderMap.get("x-amz-content-sha256").get(0).toUpperCase().equals("UNSIGNED-PAYLOAD");
-                    }
-                    signedHeaderMap.remove(name);
-                }
+            // check if original request had a signed payload
+            if (signedHeaderMap.containsKey("x-amz-content-sha256")) {
+                signedPayload = !signedHeaderMap.get("x-amz-content-sha256").get(0).toUpperCase().equals("UNSIGNED-PAYLOAD");
             }
+            signedHeaderMap.remove("x-amz-date");
+            signedHeaderMap.remove("x-amz-content-sha256");
         }
 
         final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);

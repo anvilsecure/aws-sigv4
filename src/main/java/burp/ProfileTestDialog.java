@@ -18,7 +18,6 @@ public class ProfileTestDialog extends JDialog
 
         JPanel contentPanel = new JPanel();
         contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.PAGE_AXIS));
-
         contentPanel.add(new JLabel(String.format("<html><b>Profile:</b>&nbsp;%s</html>", encode(profile.getName()))));
         contentPanel.add(new JLabel(String.format("<html><b>AccountId:</b>&nbsp;%s</html>", encode(response.account()))));
         contentPanel.add(new JLabel(String.format("<html><b>Arn:</b>&nbsp;%s</html>", encode(response.arn()))));
@@ -31,6 +30,7 @@ public class ProfileTestDialog extends JDialog
         });
         contentPanel.add(closeButton);
 
+        // not necessary but adds a nice border
         JScrollPane outerScrollPane = new JScrollPane(contentPanel);
         add(outerScrollPane);
         pack();
