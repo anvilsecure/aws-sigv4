@@ -1,6 +1,6 @@
 package burp;
 
-import burp.error.AWSCredentialProviderException;
+import burp.error.SigCredentialProviderException;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sts.StsClient;
@@ -12,7 +12,7 @@ import software.amazon.awssdk.services.sts.model.StsException;
 import javax.swing.*;
 import java.util.regex.Pattern;
 
-public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
+public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, Cloneable
 {
     public static final Pattern externalIdPattern = Pattern.compile("^[a-zA-Z0-9=@:/,._-]{2,1024}$");
     public static final Pattern roleArnPattern = Pattern.compile("^arn:aws:iam::[0-9]{12}:role/[0-9a-zA-Z+=,.@_-]{1,64}$"); // regionless
@@ -24,8 +24,8 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
     private int durationSeconds;
     private String externalId;
 
-    private AWSTemporaryCredential temporaryCredential;
-    private AWSPermanentCredential permanentCredential;
+    private SigTemporaryCredential temporaryCredential;
+    private SigStaticCredential staticCredential;
     private final transient BurpExtender burp = BurpExtender.getBurp();
 
     private static long CREDENTIAL_RENEWAL_AGE = 30; // seconds before expiration
@@ -47,17 +47,17 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
         return this.durationSeconds;
     }
 
-    public AWSPermanentCredential getPermanentCredential()
+    public SigStaticCredential getStaticCredential()
     {
-        return this.permanentCredential;
+        return this.staticCredential;
     }
 
-    private AWSAssumeRole() {};
+    private SigAssumeRoleCredentialProvider() {};
 
-    private AWSAssumeRole(final String roleArn, final AWSPermanentCredential credential)
+    private SigAssumeRoleCredentialProvider(final String roleArn, final SigStaticCredential credential)
     {
         setRoleArn(roleArn);
-        this.permanentCredential = credential;
+        this.staticCredential = credential;
         this.sessionName = createDefaultRoleSessionName();
         this.durationSeconds = CREDENTIAL_LIFETIME_MIN;
         this.externalId = "";
@@ -67,7 +67,7 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
         if (externalIdPattern.matcher(externalId).matches())
             this.externalId = externalId;
         else
-            throw new IllegalArgumentException("AWSAssumeRole externalId must match pattern "+externalIdPattern.pattern());
+            throw new IllegalArgumentException("AssumeRole externalId must match pattern "+externalIdPattern.pattern());
     }
 
     private void setDurationSeconds(int durationSeconds)
@@ -87,7 +87,7 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
         if (roleArnPattern.matcher(roleArn).matches())
             this.roleArn = roleArn;
         else
-            throw new IllegalArgumentException("AWSAssumeRole roleArn must match pattern "+roleArnPattern.pattern());
+            throw new IllegalArgumentException("AssumeRole roleArn must match pattern "+roleArnPattern.pattern());
     }
 
     private void setRoleSessionName(final String roleSessionName)
@@ -95,12 +95,12 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
         if (roleSessionNamePattern.matcher(roleSessionName).matches())
             this.sessionName = roleSessionName;
         else
-            throw new IllegalArgumentException("AWSAssumeRole roleSessionName must match pattern "+roleSessionNamePattern.pattern());
+            throw new IllegalArgumentException("AssumeRole roleSessionName must match pattern "+roleSessionNamePattern.pattern());
     }
 
-    protected AWSAssumeRole clone()
+    protected SigAssumeRoleCredentialProvider clone()
     {
-        return new AWSAssumeRole.Builder(this.roleArn, this.permanentCredential)
+        return new SigAssumeRoleCredentialProvider.Builder(this.roleArn, this.staticCredential)
                 .withDurationSeconds(this.durationSeconds)
                 .withRoleSessionName(this.sessionName)
                 .tryExternalId(this.externalId)
@@ -108,11 +108,11 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
     }
 
     public static class Builder {
-        private AWSAssumeRole assumeRole;
-        public Builder(final String roleArn, final AWSPermanentCredential credential) {
-            this.assumeRole = new AWSAssumeRole(roleArn, credential);
+        private SigAssumeRoleCredentialProvider assumeRole;
+        public Builder(final String roleArn, final SigStaticCredential credential) {
+            this.assumeRole = new SigAssumeRoleCredentialProvider(roleArn, credential);
         }
-        public Builder(final AWSAssumeRole assumeRole) {
+        public Builder(final SigAssumeRoleCredentialProvider assumeRole) {
             this.assumeRole = assumeRole.clone();
         }
         // with -> strict, try -> lax
@@ -135,11 +135,11 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
             this.assumeRole.setDurationSeconds(durationSeconds);
             return this;
         }
-        public Builder withCredential(AWSPermanentCredential credential) {
+        public Builder withCredential(SigStaticCredential credential) {
             if (credential == null) {
                 throw new IllegalArgumentException("AssumeRole permanent credential cannot be null");
             }
-            this.assumeRole.permanentCredential = credential;
+            this.assumeRole.staticCredential = credential;
             return this;
         }
         public Builder withExternalId(final String externalId) {
@@ -153,7 +153,7 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
                 this.assumeRole.externalId = "";
             return this;
         }
-        public AWSAssumeRole build() {
+        public SigAssumeRoleCredentialProvider build() {
             return this.assumeRole;
         }
     }
@@ -172,14 +172,14 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
     public String getClassName() { return getClass().getName(); }
 
     @Override
-    public AWSCredential getCredential() throws AWSCredentialProviderException
+    public SigCredential getCredential() throws SigCredentialProviderException
     {
         if ((this.temporaryCredential == null) || (this.temporaryCredential.secondsToExpire() < CREDENTIAL_RENEWAL_AGE)) {
             // signature is expired or about to expire. get new credentials
             renewCredential();
         }
         if (this.temporaryCredential == null) {
-            throw new AWSCredentialProviderException("Failed to retrieve temp credentials for: "+this.roleArn);
+            throw new SigCredentialProviderException("Failed to retrieve temp credentials for: "+this.roleArn);
         }
         return temporaryCredential;
     }
@@ -187,14 +187,14 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
     /*
     fetch new temporary credentials.
      */
-    private void renewCredential() throws AWSCredentialProviderException
+    private void renewCredential() throws SigCredentialProviderException
     {
         burp.logger.info("Fetching temporary credentials for role "+this.roleArn);
         this.temporaryCredential = null;
 
         StsClient stsClient = StsClient.builder()
                 .region(Region.US_EAST_1)
-                .credentialsProvider(() -> AwsBasicCredentials.create(permanentCredential.getAccessKeyId(), permanentCredential.getSecretKey()))
+                .credentialsProvider(() -> AwsBasicCredentials.create(staticCredential.getAccessKeyId(), staticCredential.getSecretKey()))
                 .build();
 
         AssumeRoleRequest.Builder requestBuilder = AssumeRoleRequest.builder()
@@ -208,7 +208,7 @@ public class AWSAssumeRole implements AWSCredentialProvider, Cloneable
         try {
             AssumeRoleResponse roleResponse = stsClient.assumeRole(requestBuilder.build());
             Credentials creds = roleResponse.credentials();
-            this.temporaryCredential = new AWSTemporaryCredential(
+            this.temporaryCredential = new SigTemporaryCredential(
                     creds.accessKeyId(),
                     creds.secretAccessKey(),
                     creds.sessionToken(),

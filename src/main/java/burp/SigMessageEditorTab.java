@@ -5,14 +5,14 @@ import java.awt.*;
 /*
 this class provides a non-editable request tab for displaying the request after it has been signed.
  */
-public class AWSMessageEditorTab implements IMessageEditorTab
+public class SigMessageEditorTab implements IMessageEditorTab
 {
     private IMessageEditorController controller;
     private BurpExtender burp = BurpExtender.getBurp();
     private ITextEditor messageTextEditor;
     private byte[] content;
 
-    public AWSMessageEditorTab(IMessageEditorController controller, boolean editable)
+    public SigMessageEditorTab(IMessageEditorController controller, boolean editable)
     {
         this.controller = controller;
     }
@@ -58,7 +58,7 @@ public class AWSMessageEditorTab implements IMessageEditorTab
             this.content = content;
 
             try {
-                AWSProfile profile = BurpExtender.getBurp().getSigningProfile(requestInfo.getHeaders());
+                SigProfile profile = BurpExtender.getBurp().getSigningProfile(requestInfo.getHeaders());
                 final byte[] requestBytes = BurpExtender.getBurp().signRequest(this.controller.getHttpService(), this.content, profile);
                 if (requestBytes == null) {
                     this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Failed to sign request with profile: "+profile.getName()));

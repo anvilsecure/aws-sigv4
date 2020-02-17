@@ -4,12 +4,12 @@ import com.google.gson.*;
 
 import java.lang.reflect.Type;
 
-public class AWSCredentialSerializer implements JsonSerializer<AWSCredential>, JsonDeserializer<AWSCredential>
+public class SigCredentialProviderSerializer implements JsonSerializer<SigCredentialProvider>, JsonDeserializer<SigCredentialProvider>
 {
     public final static String CLASS_NAME = "className";
 
     @Override
-    public JsonElement serialize(AWSCredential src, Type typeOfSrc, JsonSerializationContext context)
+    public JsonElement serialize(SigCredentialProvider src, Type typeOfSrc, JsonSerializationContext context)
     {
         JsonObject obj = context.serialize(src).getAsJsonObject();
         obj.addProperty(CLASS_NAME, src.getClassName());
@@ -17,17 +17,17 @@ public class AWSCredentialSerializer implements JsonSerializer<AWSCredential>, J
     }
 
     @Override
-    public AWSCredential deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException
+    public SigCredentialProvider deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException
     {
         final JsonObject obj = json.getAsJsonObject();
         final String className = obj.get(CLASS_NAME).getAsString();
         obj.remove(CLASS_NAME); // this is a meta property
-        Class<AWSCredential> credentialClass;
+        Class<SigCredentialProvider> providerClass;
         try {
-            credentialClass = (Class<AWSCredential>) Class.forName(className);
+            providerClass = (Class<SigCredentialProvider>) Class.forName(className);
         } catch (ClassNotFoundException exc) {
             throw new JsonParseException("Failed to instantiate class: "+className);
         }
-        return context.deserialize(obj, credentialClass);
+        return context.deserialize(obj, providerClass);
     }
 }

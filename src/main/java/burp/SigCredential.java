@@ -2,7 +2,7 @@ package burp;
 
 import java.util.regex.Pattern;
 
-public abstract class AWSCredential
+public abstract class SigCredential
 {
     protected static final Pattern accessKeyIdPattern = Pattern.compile("^[\\w]{16,128}$");
     protected static final Pattern secretKeyPattern = Pattern.compile("^[a-zA-Z0-9/+]{40,128}$"); // base64 characters. not sure on length
@@ -28,14 +28,14 @@ public abstract class AWSCredential
         if (accessKeyIdPattern.matcher(accessKeyId).matches())
             this.accessKeyId = accessKeyId;
         else
-            throw new IllegalArgumentException("AWSCredential accessKeyId must match pattern "+accessKeyIdPattern.pattern());
+            throw new IllegalArgumentException("Credential accessKeyId must match pattern "+accessKeyIdPattern.pattern());
     }
 
     protected void setSecretKey(final String secretKey) {
         if (secretKeyPattern.matcher(secretKey).matches())
             this.secretKey = secretKey;
         else
-            throw new IllegalArgumentException("AWSCredential secretKey must match pattern "+secretKeyPattern.pattern());
+            throw new IllegalArgumentException("Credential secretKey must match pattern "+secretKeyPattern.pattern());
     }
 
     public String getExportString()
