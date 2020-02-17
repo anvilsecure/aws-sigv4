@@ -3,14 +3,13 @@ package burp;
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
-import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.nio.file.Path;
 import java.time.Instant;
 
-public class AWSProfileEditorDialog extends JDialog
+public class SigProfileEditorDialog extends JDialog
 {
     static final Color disabledColor = new Color(161, 161, 161);
     private static final BurpExtender burp = BurpExtender.getBurp();
@@ -78,7 +77,7 @@ public class AWSProfileEditorDialog extends JDialog
     return a dialog with a form for editing profiles. optional profile param can be used to populate the form.
     set profile to null for a create form.
      */
-    public AWSProfileEditorDialog(Frame owner, String title, boolean modal, AWSProfile profile)
+    public SigProfileEditorDialog(Frame owner, String title, boolean modal, SigProfile profile)
     {
         super(owner, title, modal);
         setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
@@ -202,7 +201,7 @@ public class AWSProfileEditorDialog extends JDialog
             dispose();
         });
         okButton.addActionListener(actionEvent -> {
-            AWSAssumeRole assumeRole = null;
+            SigAssumeRoleCredentialProvider assumeRole = null;
             final String accessKeyId = accessKeyIdTextField.getText();
             final String secretKey = secretKeyTextField.getText();
             final String sessionToken = sessionTokenTextField.getText();
@@ -210,46 +209,46 @@ public class AWSProfileEditorDialog extends JDialog
             try {
                 if (profile != null && !roleArnTextField.getText().equals("")) {
                     // edit dialog
-                    final AWSPermanentCredential permanentCredential = new AWSPermanentCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
+                    final SigStaticCredential staticCredential = new SigStaticCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
                     if (profile.getAssumeRole() != null) {
-                        assumeRole = new AWSAssumeRole.Builder(profile.getAssumeRole())
+                        assumeRole = new SigAssumeRoleCredentialProvider.Builder(profile.getAssumeRole())
                                 .withRoleArn(roleArnTextField.getText())
-                                .withCredential(permanentCredential)
+                                .withCredential(staticCredential)
                                 .tryExternalId(externalIdTextField.getText())
                                 .tryRoleSessionName(sessionNameTextField.getText())
                                 .build();
                     }
                     else {
-                        assumeRole = new AWSAssumeRole.Builder(roleArnTextField.getText(), permanentCredential)
+                        assumeRole = new SigAssumeRoleCredentialProvider.Builder(roleArnTextField.getText(), staticCredential)
                                 .tryExternalId(externalIdTextField.getText())
                                 .tryRoleSessionName(sessionNameTextField.getText())
                                 .build();
                     }
                 }
 
-                AWSProfile.Builder newProfileBuilder = new AWSProfile.Builder(nameTextField.getText())
+                SigProfile.Builder newProfileBuilder = new SigProfile.Builder(nameTextField.getText())
                         .withRegion(regionTextField.getText())
                         .withService(serviceTextField.getText());
                 if (!profileKeyIdTextField.getText().equals(""))
                     newProfileBuilder.withAccessKeyId(profileKeyIdTextField.getText());
 
                 if (!httpProviderUrlField.getText().equals("") || !httpProviderCaPathField.getText().equals("")) {
-                    newProfileBuilder.withCredentialProvider(new AWSHttpProvider(httpProviderUrlField.getText(), httpProviderCaPathField.getText()),
-                            httpProviderRadioButton.isSelected() ? AWSProfile.DEFAULT_HTTP_PRIORITY : AWSProfile.DISABLED_PRIORITY);
+                    newProfileBuilder.withCredentialProvider(new SigHttpCredentialProvider(httpProviderUrlField.getText(), httpProviderCaPathField.getText()),
+                            httpProviderRadioButton.isSelected() ? SigProfile.DEFAULT_HTTP_PRIORITY : SigProfile.DISABLED_PRIORITY);
                 }
 
                 if (assumeRole != null)
-                    newProfileBuilder.withCredentialProvider(assumeRole, assumeRoleProviderRadioButton.isSelected() ? AWSProfile.DEFAULT_ASSUMEROLE_PRIORITY : AWSProfile.DISABLED_PRIORITY);
+                    newProfileBuilder.withCredentialProvider(assumeRole, assumeRoleProviderRadioButton.isSelected() ? SigProfile.DEFAULT_ASSUMEROLE_PRIORITY : SigProfile.DISABLED_PRIORITY);
 
                 // if any cred fields are specified, attempt to use them.
                 if (!accessKeyId.equals("") || !secretKey.equals("") || !sessionToken.equals("")) {
-                    AWSCredential credential = new AWSPermanentCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
+                    SigCredential credential = new SigStaticCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
                     if (!sessionToken.equals(""))
-                        credential = new AWSTemporaryCredential(accessKeyId, secretKey, sessionToken, Instant.now().getEpochSecond() + 900);
-                    newProfileBuilder.withCredentialProvider(new AWSStaticCredentialProvider(credential), AWSProfile.DEFAULT_STATIC_PRIORITY);
+                        credential = new SigTemporaryCredential(accessKeyId, secretKey, sessionToken, Instant.now().getEpochSecond() + 900);
+                    newProfileBuilder.withCredentialProvider(new SigStaticCredentialProvider(credential), SigProfile.DEFAULT_STATIC_PRIORITY);
                 }
 
-                final AWSProfile newProfile = newProfileBuilder.build();
+                final SigProfile newProfile = newProfileBuilder.build();
                 if (newProfile.getCredentialProviderCount() <= 0) {
                     throw new IllegalArgumentException("Must provide at least 1 authentication method");
                 }
@@ -282,7 +281,7 @@ public class AWSProfileEditorDialog extends JDialog
         pack();
     }
 
-    protected void applyProfile(final AWSProfile profile)
+    protected void applyProfile(final SigProfile profile)
     {
         if (profile != null) {
             nameTextField.setText(profile.getName());
@@ -292,11 +291,11 @@ public class AWSProfileEditorDialog extends JDialog
             regionTextField.setText(profile.getRegion());
             serviceTextField.setText(profile.getService());
             if (profile.getStaticCredentialProvider() != null) {
-                AWSCredential credential = profile.getStaticCredentialProvider().getCredential();
+                SigCredential credential = profile.getStaticCredentialProvider().getCredential();
                 accessKeyIdTextField.setText(credential.getAccessKeyId());
                 secretKeyTextField.setText(credential.getSecretKey());
                 if (credential.isTemporary()) {
-                    sessionTokenTextField.setText(((AWSTemporaryCredential)credential).getSessionToken());
+                    sessionTokenTextField.setText(((SigTemporaryCredential)credential).getSessionToken());
                 }
                 if (profile.getStaticCredentialProviderPriority() >= 0) {
                     staticProviderRadioButton.doClick();
@@ -307,8 +306,8 @@ public class AWSProfileEditorDialog extends JDialog
                 sessionNameTextField.setText(profile.getAssumeRole().getSessionName());
                 externalIdTextField.setText(profile.getAssumeRole().getExternalId());
                 // initialize static creds as well
-                accessKeyIdTextField.setText(profile.getAssumeRole().getPermanentCredential().getAccessKeyId());
-                secretKeyTextField.setText(profile.getAssumeRole().getPermanentCredential().getSecretKey());
+                accessKeyIdTextField.setText(profile.getAssumeRole().getStaticCredential().getAccessKeyId());
+                secretKeyTextField.setText(profile.getAssumeRole().getStaticCredential().getSecretKey());
                 if (profile.getAssumeRolePriority() >= 0) {
                     assumeRoleProviderRadioButton.doClick();
                 }
@@ -335,7 +334,7 @@ class JTextFieldHint extends JTextField implements FocusListener
 {
     private Font defaultFont;
     private Color defaultForegroundColor;
-    private Color hintForegroundColor = AWSProfileEditorDialog.disabledColor;;
+    private Color hintForegroundColor = SigProfileEditorDialog.disabledColor;;
     private String hintText;
 
     public JTextFieldHint(String content, int width, String hintText) {

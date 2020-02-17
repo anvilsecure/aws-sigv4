@@ -1,6 +1,6 @@
 package burp;
 
-import burp.error.AWSCredentialProviderException;
+import burp.error.SigCredentialProviderException;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
@@ -26,14 +26,14 @@ import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.ArrayList;
 
-public class AWSHttpProvider implements AWSCredentialProvider
+public class SigHttpCredentialProvider implements SigCredentialProvider
 {
     public static final String PROVIDER_NAME = "HttpGet";
 
     private URI requestUrl;
     private transient SSLContext sslContext;
     private transient HttpClient httpClient;
-    private AWSCredential credential;
+    private SigCredential credential;
     private Path caBundlePath;
 
     private final transient BurpExtender burp = BurpExtender.getBurp();
@@ -48,9 +48,9 @@ public class AWSHttpProvider implements AWSCredentialProvider
         return caBundlePath;
     }
 
-    private AWSHttpProvider() {};
+    private SigHttpCredentialProvider() {};
 
-    public AWSHttpProvider(String url, String caBundle) {
+    public SigHttpCredentialProvider(String url, String caBundle) {
         init(url, caBundle);
     }
 
@@ -107,12 +107,12 @@ public class AWSHttpProvider implements AWSCredentialProvider
         httpClient = builder.build();
     }
 
-    private void renewCredential() throws AWSCredentialProviderException
+    private void renewCredential() throws SigCredentialProviderException
     {
         try {
             initializeHttpClient();
         } catch (Exception exc) {
-            throw new AWSCredentialProviderException(exc.getMessage());
+            throw new SigCredentialProviderException(exc.getMessage());
         }
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
@@ -125,40 +125,40 @@ public class AWSHttpProvider implements AWSCredentialProvider
         }
         catch (InterruptedException | IOException exc) {
             burp.logger.error("HttpGet failed: "+exc.getMessage());
-            throw new AWSCredentialProviderException("Failed to send GET request to "+requestUrl);
+            throw new SigCredentialProviderException("Failed to send GET request to "+requestUrl);
         }
 
         if (httpResponse.statusCode() != 200)
-            throw new AWSCredentialProviderException(String.format("GET request returned error: %d %s", httpResponse.statusCode(), requestUrl));
+            throw new SigCredentialProviderException(String.format("GET request returned error: %d %s", httpResponse.statusCode(), requestUrl));
 
         try {
             // expect similar object to sts:AssumeRole
             JsonObject credentialObject = new Gson().fromJson(httpResponse.body(), JsonObject.class);
             if (credentialObject.has("SessionToken")) {
-                credential = new AWSTemporaryCredential(
+                credential = new SigTemporaryCredential(
                         credentialObject.get("AccessKeyId").getAsString(),
                         credentialObject.get("SecretAccessKey").getAsString(),
                         credentialObject.get("SessionToken").getAsString(),
                         credentialObject.get("Expiration").getAsLong());
             } else {
-                credential = new AWSPermanentCredential(
+                credential = new SigStaticCredential(
                         credentialObject.get("AccessKeyId").getAsString(),
                         credentialObject.get("SecretAccessKey").getAsString());
             }
         } catch (JsonParseException | NullPointerException exc) {
-            throw new AWSCredentialProviderException("Failed to parse HttpProvider response");
+            throw new SigCredentialProviderException("Failed to parse HttpProvider response");
         }
     }
 
     @Override
-    public AWSCredential getCredential() throws AWSCredentialProviderException
+    public SigCredential getCredential() throws SigCredentialProviderException
     {
         if (credential == null) {
             renewCredential();
         }
         else {
             if (credential.isTemporary()) {
-                final long duration = ((AWSTemporaryCredential)credential).secondsToExpire();
+                final long duration = ((SigTemporaryCredential)credential).secondsToExpire();
                 if (duration <= 30) {
                     // fewer than 30 seconds until expiration, refresh
                     renewCredential();
@@ -171,7 +171,7 @@ public class AWSHttpProvider implements AWSCredentialProvider
             }
         }
         if (credential == null) {
-            throw new AWSCredentialProviderException("Failed to get credential from "+requestUrl);
+            throw new SigCredentialProviderException("Failed to get credential from "+requestUrl);
         }
         return credential;
     }

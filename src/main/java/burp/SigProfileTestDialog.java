@@ -5,14 +5,14 @@ import software.amazon.awssdk.services.sts.model.GetCallerIdentityResponse;
 import javax.swing.*;
 import java.awt.*;
 
-public class ProfileTestDialog extends JDialog
+public class SigProfileTestDialog extends JDialog
 {
     private String encode(final String label)
     {
         return label.replace("<", "&lt;").replace(">", "&gt;");
     }
 
-    public ProfileTestDialog(Frame owner, final AWSProfile profile, boolean modal, final GetCallerIdentityResponse response)
+    public SigProfileTestDialog(Frame owner, final SigProfile profile, boolean modal, final GetCallerIdentityResponse response)
     {
         super(owner, profile.getName(), modal);
 

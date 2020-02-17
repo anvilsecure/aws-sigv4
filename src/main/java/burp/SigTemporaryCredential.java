@@ -5,16 +5,16 @@ import java.time.Instant;
 /*
 This class represents temporary credentials that utilize a session token in addition to a secret key.
  */
-public class AWSTemporaryCredential extends AWSCredential
+public class SigTemporaryCredential extends SigCredential
 {
     //protected static final Pattern sessionTokenPattern = Pattern.compile("^[a-zA-Z0-9/+]{40,512}[=]{,2}$") // not sure
 
     private long expireTimeEpochSeconds;
     private String sessionToken;
 
-    private AWSTemporaryCredential() {};
+    private SigTemporaryCredential() {};
 
-    public AWSTemporaryCredential(String accessKeyId, String secretKey, String sessionToken, long expireTimeEpochSeconds)
+    public SigTemporaryCredential(String accessKeyId, String secretKey, String sessionToken, long expireTimeEpochSeconds)
     {
         setAccessKeyId(accessKeyId);
         setSecretKey(secretKey);

@@ -64,15 +64,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     public static final String DISPLAY_NAME = "SigV4"; // name for tabs, menu, and other UI components
     private static final long PRESIGN_DURATION_SECONDS = 900; // pre-signed url lifetime
 
-    private static final String NO_DEFAULT_PROFILE = "        "; // ensure combobox is visible. AWSProfile.profileNamePattern doesn't allow this name
+    private static final String NO_DEFAULT_PROFILE = "        "; // ensure combobox is visible. SigProfile.profileNamePattern doesn't allow this name
     private static final String PROFILE_HEADER_NAME = "X-BurpSigV4-Profile".toLowerCase();
     private static final Pattern authorizationHeaderRegex = Pattern.compile("^Authorization: AWS4-HMAC-SHA256 Credential=(?<accessKeyId>[\\w]{16,128})/(?<date>[0-9]{8})/(?<region>[a-z0-9-]{5,64})/(?<service>[a-z0-9-]{1,64})/aws4_request, SignedHeaders=(?<headers>[\\w;-]+), Signature=[a-z0-9]{64}$", Pattern.CASE_INSENSITIVE);
     private static final Pattern authorizationHeaderLooseRegex = Pattern.compile("^Authorization:\\s+AWS4-HMAC-SHA256\\s+Credential=(?<accessKeyId>[\\w-]{0,128})/(?<date>[\\w-]{0,8})/(?<region>[\\w-]{0,64})/(?<service>[\\w-]{0,64})/aws4_request,\\s+SignedHeaders=(?<headers>[\\w;-]+),\\s+Signature=[\\w-]{0,64}$", Pattern.CASE_INSENSITIVE);
 
     protected IExtensionHelpers helpers;
     protected IBurpExtenderCallbacks callbacks;
-    private HashMap<String, AWSProfile> profileKeyIdMap; // map accessKeyId to profile
-    private HashMap<String, AWSProfile> profileNameMap; // map name to profile
+    private HashMap<String, SigProfile> profileKeyIdMap; // map accessKeyId to profile
+    private HashMap<String, SigProfile> profileNameMap; // map name to profile
     protected LogWriter logger = LogWriter.getLogger();
     private boolean preserveHeaderOrder = true; // preserve order of headers after signing
 
@@ -134,9 +134,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
 
         // import/export settings json with dialogs
-        JPanel importExportSettingsPanel = new JPanel();
         JButton settingsImportButton = new JButton("Import");
-        importExportSettingsPanel.add(settingsImportButton);
         settingsImportButton.addActionListener(actionEvent -> {
             JDialog dialog = new JDialog((Frame)null, "Import Settings Json", true);
             JPanel mainPanel = new JPanel(new BorderLayout());
@@ -166,7 +164,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             dialog.setVisible(true);
         });
         JButton settingsExportButton = new JButton("Export");
-        importExportSettingsPanel.add(settingsExportButton);
         settingsExportButton.addActionListener(actionEvent -> {
             // display settings json in a new dialog
             JDialog dialog = new JDialog((Frame)null, "Export Settings Json", true);
@@ -177,17 +174,17 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             JScrollPane scrollPane = new JScrollPane(textPanel);
             mainPanel.add(scrollPane, BorderLayout.CENTER);
             JPanel buttonPanel = new JPanel();
-            JButton closeButton = new JButton("Close");
-            closeButton.addActionListener(actionEvent1 -> {
-                dialog.setVisible(false);
-            });
-            buttonPanel.add(closeButton);
             JButton copyToClipboardButton = new JButton("Copy to clipboard");
             copyToClipboardButton.addActionListener(actionEvent12 -> {
                 Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                 clipboard.setContents(new StringSelection(textPanel.getText()), null);
             });
             buttonPanel.add(copyToClipboardButton);
+            JButton closeButton = new JButton("Close");
+            closeButton.addActionListener(actionEvent1 -> {
+                dialog.setVisible(false);
+            });
+            buttonPanel.add(closeButton);
             mainPanel.add(buttonPanel, BorderLayout.PAGE_END);
             dialog.add(mainPanel);
             dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
@@ -200,19 +197,19 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             dialog.setSize(dialog.getSize().width, height);
             dialog.setVisible(true);
         });
-
+        otherSettingsPanel.add(new JLabel("Settings Json"));
+        otherSettingsPanel.add(settingsImportButton);
+        otherSettingsPanel.add(settingsExportButton);
 
         GridBagConstraints c00 = new GridBagConstraints(); c00.anchor = GridBagConstraints.FIRST_LINE_START; c00.gridy = 0; c00.gridwidth = 2;
         GridBagConstraints c01 = new GridBagConstraints(); c01.anchor = GridBagConstraints.FIRST_LINE_START; c01.gridy = 1; c01.gridwidth = 2; c01.insets = new Insets(10, 0, 10, 0);
         GridBagConstraints c02 = new GridBagConstraints(); c02.anchor = GridBagConstraints.FIRST_LINE_START; c02.gridy = 2;
         GridBagConstraints c03 = new GridBagConstraints(); c03.anchor = GridBagConstraints.FIRST_LINE_START; c03.gridy = 3;
-        GridBagConstraints c04 = new GridBagConstraints(); c04.anchor = GridBagConstraints.FIRST_LINE_START; c04.gridy = 4;
 
         globalSettingsPanel.add(settingsLabel, c00);
         globalSettingsPanel.add(new JLabel("<html>Change plugin behavior. Set <i>Default Profile</i> to force signing of all requests with the specified profile credentials."), c01);
         globalSettingsPanel.add(checkBoxPanel, c02);
         globalSettingsPanel.add(otherSettingsPanel, c03);
-        globalSettingsPanel.add(importExportSettingsPanel, c04);
 
         //
         // status label
@@ -357,7 +354,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                JDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null);
+                JDialog dialog = new SigProfileEditorDialog(null, "Add Profile", true, null);
                 callbacks.customizeUiComponent(dialog);
                 dialog.setVisible(true);
             }
@@ -371,7 +368,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 if (rowIndeces.length == 1) {
                     DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
-                    JDialog dialog = new AWSProfileEditorDialog(null, "Edit Profile", true, profileNameMap.get(name));
+                    JDialog dialog = new SigProfileEditorDialog(null, "Edit Profile", true, profileNameMap.get(name));
                     callbacks.customizeUiComponent(dialog);
                     dialog.setVisible(true);
                 }
@@ -405,18 +402,18 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 DefaultTableModel model = (DefaultTableModel) profileTable.getModel();
                 if (rowIndeces.length == 1) {
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
-                    AWSProfile profile = profileNameMap.get(name);
+                    SigProfile profile = profileNameMap.get(name);
                     StsClient stsClient = StsClient.builder()
                             .region(Region.US_EAST_1)
                             .credentialsProvider(() -> {
-                                final AWSCredential cred = profile.getCredential();
+                                final SigCredential cred = profile.getCredential();
                                 return AwsBasicCredentials.create(cred.getAccessKeyId(), cred.getSecretKey());
                             })
                             .build();
 
                     try {
                         GetCallerIdentityResponse response = stsClient.getCallerIdentity();
-                        JDialog dialog = new ProfileTestDialog(null, profile, false, response);
+                        JDialog dialog = new SigProfileTestDialog(null, profile, false, response);
                         dialog.setVisible(true);
                     } catch (StsException exc) {
                         JOptionPane.showMessageDialog(getUiComponent(), exc.getMessage());
@@ -433,7 +430,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             public void actionPerformed(ActionEvent actionEvent)
             {
                 try {
-                    AWSProfileImportDialog importDialog = new AWSProfileImportDialog(null, "Import Profiles", true);
+                    SigProfileImportDialog importDialog = new SigProfileImportDialog(null, "Import Profiles", true);
                     callbacks.customizeUiComponent(importDialog);
                     importDialog.setVisible(true);
                 }
@@ -451,11 +448,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 chooser.setFileHidingEnabled(false);
                 if (chooser.showOpenDialog(getUiComponent()) == JFileChooser.APPROVE_OPTION) {
                     final Path exportPath = Paths.get(chooser.getSelectedFile().getPath());
-                    ArrayList<AWSProfile> awsProfiles = new ArrayList<>();
+                    ArrayList<SigProfile> sigProfiles = new ArrayList<>();
                     for (final String name : profileNameMap.keySet()) {
-                        awsProfiles.add(profileNameMap.get(name));
+                        sigProfiles.add(profileNameMap.get(name));
                     }
-                    int exportCount = AWSProfile.exportToFilePath(awsProfiles, exportPath);
+                    int exportCount = SigProfile.exportToFilePath(sigProfiles, exportPath);
                     final String msg = String.format("Exported %d profiles to %s", exportCount, exportPath);
                     JOptionPane.showMessageDialog(getUiComponent(), msg);
                     logger.info(msg);
@@ -589,14 +586,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     }
 
     /*
-    build Gson object for de/serialization of settings. AWSCredential, AWSCredentialProvider, and Path need
+    build Gson object for de/serialization of settings. SigCredential, SigCredentialProvider, and Path need
     to be handled as a special case since they're interfaces.
      */
     private Gson getGsonSerializer()
     {
         return new GsonBuilder()
-                .registerTypeAdapter(AWSCredential.class, new AWSCredentialSerializer())
-                .registerTypeAdapter(AWSCredentialProvider.class, new AWSCredentialProviderSerializer())
+                .registerTypeAdapter(SigCredential.class, new SigCredentialSerializer())
+                .registerTypeAdapter(SigCredentialProvider.class, new SigCredentialProviderSerializer())
                 .registerTypeHierarchyAdapter(Path.class, new TypeAdapter<Path>() {
                     @Override
                     public void write(JsonWriter out, Path value) throws IOException {
@@ -651,8 +648,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         // load profiles
         if (settings.has(SETTING_PROFILES)) {
-            final Type hashMapType = new TypeToken<HashMap<String, AWSProfile>>(){}.getType();
-            Map<String, AWSProfile> profileMap;
+            final Type hashMapType = new TypeToken<HashMap<String, SigProfile>>(){}.getType();
+            Map<String, SigProfile> profileMap;
             try {
                 profileMap = getGsonSerializer().fromJson(settings.get(SETTING_PROFILES), hashMapType);
             } catch (JsonParseException exc) {
@@ -742,7 +739,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public IMessageEditorTab createNewInstance(IMessageEditorController controller, boolean editable)
     {
-        return new AWSMessageEditorTab(controller, editable);
+        return new SigMessageEditorTab(controller, editable);
     }
 
     @Override
@@ -828,7 +825,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         @Override
                         public void actionPerformed(ActionEvent actionEvent)
                         {
-                            final AWSProfile profile = getSigningProfile(requestInfo.getHeaders());
+                            final SigProfile profile = getSigningProfile(requestInfo.getHeaders());
                             String signedUrl = ""; // clear clipboard on error
                             if (profile == null) {
                                 // XXX consider notifying user of error
@@ -856,7 +853,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             public void actionPerformed(ActionEvent actionEvent)
                             {
                                 final String profileName = actionEvent.getActionCommand();
-                                AWSProfile profile = profileNameMap.get(profileName);
+                                SigProfile profile = profileNameMap.get(profileName);
                                 if (profile == null) {
                                     // XXX maybe use an "Add Profile" dialog here?
                                     logger.error("Profile name does not exist: "+profileName);
@@ -864,7 +861,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 }
                                 // if region or service is missing, prompt user. do not re-prompt if values are left blank
                                 if (profile.getService().equals("") || profile.getRegion().equals("")) {
-                                    AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Add Signature", true, profile);
+                                    SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(null, "Add Signature", true, profile);
                                     callbacks.customizeUiComponent(dialog);
                                     dialog.disableForEdit();
                                     // set focus to first missing field
@@ -900,16 +897,16 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         public void actionPerformed(ActionEvent actionEvent)
                         {
                             IRequestInfo requestInfo = helpers.analyzeRequest(messages[0]);
-                            AWSProfile signingProfile = null;
+                            SigProfile signingProfile = null;
                             final List<String> authorizationHeaders = requestInfo.getHeaders().stream()
                                     .filter(h -> h.toLowerCase().startsWith("authorization:"))
                                     .collect(Collectors.toList());
                             for (final String value : authorizationHeaders) {
                                 Matcher matcher = authorizationHeaderRegex.matcher(value);
                                 if (matcher.matches()) {
-                                    AWSProfile tempProfile = profileKeyIdMap.get(matcher.group("accessKeyId"));
+                                    SigProfile tempProfile = profileKeyIdMap.get(matcher.group("accessKeyId"));
                                     if (tempProfile != null) {
-                                        AWSProfile.Builder builder = new AWSProfile.Builder(tempProfile);
+                                        SigProfile.Builder builder = new SigProfile.Builder(tempProfile);
                                         if (tempProfile.getService().equals("")) {
                                             builder.withService(matcher.group("service"));
                                         }
@@ -923,7 +920,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             }
                             if (signingProfile == null) {
                                 // request is likely invalid SigV4 format
-                                AWSProfileEditorDialog dialog = new AWSProfileEditorDialog(null, "Add Profile", true, null);
+                                SigProfileEditorDialog dialog = new SigProfileEditorDialog(null, "Add Profile", true, null);
                                 List<Map<String, String>> signatures = authorizationHeaders.stream()
                                         .map(h -> parseSigV4AuthorizationHeader(h, false))
                                         .filter(Objects::nonNull)
@@ -936,14 +933,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 dialog.setVisible(true);
                                 final String newProfileName = dialog.getNewProfileName();
                                 if (newProfileName != null) {
-                                    final AWSProfile newProfile = profileNameMap.get(newProfileName);
+                                    final SigProfile newProfile = profileNameMap.get(newProfileName);
                                     if (newProfile != null) {
                                         messages[0].setRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), newProfile));
                                     } // else... XXX maybe display an error dialog here
                                 }
                             }
                             else {
-                                AWSProfileEditorReadOnlyDialog dialog = new AWSProfileEditorReadOnlyDialog(null, "Edit Signature", true, signingProfile);
+                                SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(null, "Edit Signature", true, signingProfile);
                                 callbacks.customizeUiComponent(dialog);
                                 // disable profile name and secret since they will have to be changed in the top-level plugin tab.
                                 // XXX would be nice to have a combobox for the profile here instead of disabling.
@@ -1018,7 +1015,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         defaultProfileComboBox.addItem(NO_DEFAULT_PROFILE);
 
         for (final String name : getSortedProfileNames()) {
-            AWSProfile profile = this.profileNameMap.get(name);
+            SigProfile profile = this.profileNameMap.get(name);
             model.addRow(new Object[]{profile.getName(), profile.getAccessKeyIdForProfileSelection(), profile.getActiveProvider().getName(), profile.getRegion(), profile.getService()});
             defaultProfileComboBox.addItem(name);
         }
@@ -1028,13 +1025,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     /*
     NOTE: this will overwrite an existing profile with the same name
     */
-    protected void addProfile(final AWSProfile profile)
+    protected void addProfile(final SigProfile profile)
     {
-        final AWSProfile p1 = this.profileNameMap.get(profile.getName());
+        final SigProfile p1 = this.profileNameMap.get(profile.getName());
         if (p1 == null) {
             // profile name doesn't exist. make sure there is no keyId conflict with an existing profile
             if (profile.getAccessKeyIdForProfileSelection() != null) {
-                AWSProfile p2 = this.profileKeyIdMap.get(profile.getAccessKeyIdForProfileSelection());
+                SigProfile p2 = this.profileKeyIdMap.get(profile.getAccessKeyIdForProfileSelection());
                 if (p2 != null) {
                     // keyId conflict. do not add profile
                     updateStatus("Profiles must have a unique accessKeyId: "+profile.getName());
@@ -1047,7 +1044,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         // refresh the keyId map
         this.profileKeyIdMap.clear();
-        for (final AWSProfile p : this.profileNameMap.values()) {
+        for (final SigProfile p : this.profileNameMap.values()) {
             if (p.getAccessKeyIdForProfileSelection() != null) {
                 this.profileKeyIdMap.put(p.getAccessKeyIdForProfileSelection(), p);
             }
@@ -1065,7 +1062,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     /*
     if newProfile is valid, delete oldProfile and add newProfile.
      */
-    protected void updateProfile(final AWSProfile oldProfile, final AWSProfile newProfile)
+    protected void updateProfile(final SigProfile oldProfile, final SigProfile newProfile)
     {
         if (oldProfile == null) {
             addProfile(newProfile);
@@ -1073,7 +1070,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
 
         // remove any profile with same name
-        final AWSProfile p1 = this.profileNameMap.get(oldProfile.getName());
+        final SigProfile p1 = this.profileNameMap.get(oldProfile.getName());
         if (p1 == null) {
             updateStatus("Update profile failed. Old profile doesn't exist.");
             throw new IllegalArgumentException("Update profile failed. Old profile doesn't exist.");
@@ -1087,7 +1084,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
     }
 
-    private void deleteProfile(AWSProfile profile)
+    private void deleteProfile(SigProfile profile)
     {
         if (this.profileNameMap.containsKey(profile.getName())) {
             this.profileNameMap.remove(profile.getName());
@@ -1120,7 +1117,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     }
 
     /*
-    Note that no check is done on profile name. It is assumed values come from AWSProfile and are validated there.
+    Note that no check is done on profile name. It is assumed values come from SigProfile and are validated there.
      */
     private void setDefaultProfileName(final String defaultProfileName)
     {
@@ -1175,10 +1172,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
     }
 
-    public AWSProfile getSigningProfile(List<String> headers)
+    public SigProfile getSigningProfile(List<String> headers)
     {
         // check for http header that specifies a signing profile
-        AWSProfile signingProfile = headers.stream()
+        SigProfile signingProfile = headers.stream()
                 .filter(h -> h.toLowerCase().startsWith(PROFILE_HEADER_NAME+":"))
                 .map(h -> this.profileNameMap.get(splitHeader(h)[1]))
                 .filter(Objects::nonNull)
@@ -1201,7 +1198,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     signingProfile = this.profileKeyIdMap.get(matcher.group("accessKeyId"));
                 }
 
-                AWSProfile.Builder builder = new AWSProfile.Builder(signingProfile);
+                SigProfile.Builder builder = new SigProfile.Builder(signingProfile);
                 if (signingProfile.getService().equals("")) {
                     builder.withService(matcher.group("service"));
                 }
@@ -1237,7 +1234,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return false;
     }
 
-    public byte[] signRequest(final IHttpService httpService, final byte[] originalRequestBytes, final AWSProfile signingProfile)
+    public byte[] signRequest(final IHttpService httpService, final byte[] originalRequestBytes, final SigProfile signingProfile)
     {
         IRequestInfo request = helpers.analyzeRequest(httpService, originalRequestBytes);
         // parse authorization header
@@ -1303,10 +1300,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
 
         //TODO error check
-        final AWSCredential credential = signingProfile.getCredential();
+        final SigCredential credential = signingProfile.getCredential();
         AwsCredentials awsCredentials;
         if (credential.isTemporary()) {
-            awsCredentials = AwsSessionCredentials.create(credential.getAccessKeyId(), credential.getSecretKey(), ((AWSTemporaryCredential) credential).getSessionToken());
+            awsCredentials = AwsSessionCredentials.create(credential.getAccessKeyId(), credential.getSecretKey(), ((SigTemporaryCredential) credential).getSessionToken());
         }
         else {
             awsCredentials = AwsBasicCredentials.create(credential.getAccessKeyId(), credential.getSecretKey());
@@ -1402,12 +1399,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return requestBytes;
     }
 
-    public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final AWSProfile signingProfile)
+    public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final SigProfile signingProfile)
     {
         return presignRequest(httpService, originalRequestBytes, signingProfile, PRESIGN_DURATION_SECONDS);
     }
 
-    public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final AWSProfile signingProfile, final long durationSeconds)
+    public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final SigProfile signingProfile, final long durationSeconds)
     {
 
         IRequestInfo request = helpers.analyzeRequest(httpService, originalRequestBytes);
@@ -1427,10 +1424,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
 
         //TODO error check
-        final AWSCredential credential = signingProfile.getCredential();
+        final SigCredential credential = signingProfile.getCredential();
         AwsCredentials awsCredentials;
         if (credential.isTemporary()) {
-            awsCredentials = AwsSessionCredentials.create(credential.getAccessKeyId(), credential.getSecretKey(), ((AWSTemporaryCredential) credential).getSessionToken());
+            awsCredentials = AwsSessionCredentials.create(credential.getAccessKeyId(), credential.getSecretKey(), ((SigTemporaryCredential) credential).getSessionToken());
         }
         else {
             awsCredentials = AwsBasicCredentials.create(credential.getAccessKeyId(), credential.getSecretKey());
@@ -1504,7 +1501,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
 
             if (isAws4Request(request)) {
-                final AWSProfile signingProfile = getSigningProfile(request.getHeaders());
+                final SigProfile signingProfile = getSigningProfile(request.getHeaders());
 
                 if (signingProfile == null) {
                     logger.error("Failed to get signing profile");

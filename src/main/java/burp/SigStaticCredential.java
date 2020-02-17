@@ -3,11 +3,11 @@ package burp;
 /*
 This class represents a permanent AWS credential generated with IAM
  */
-public class AWSPermanentCredential extends AWSCredential
+public class SigStaticCredential extends SigCredential
 {
-    private AWSPermanentCredential() {};
+    private SigStaticCredential() {};
 
-    public AWSPermanentCredential(String accessKeyId, String secretKey)
+    public SigStaticCredential(String accessKeyId, String secretKey)
     {
         setAccessKeyId(accessKeyId);
         setSecretKey(secretKey);

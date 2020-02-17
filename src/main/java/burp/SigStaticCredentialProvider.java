@@ -1,20 +1,21 @@
 package burp;
 
-public class AWSStaticCredentialProvider implements AWSCredentialProvider {
+public class SigStaticCredentialProvider implements SigCredentialProvider
+{
 
     public static final String PROVIDER_NAME = "Static";
 
-    private AWSCredential credential;
+    private SigCredential credential;
 
-    private AWSStaticCredentialProvider() {};
+    private SigStaticCredentialProvider() {};
 
-    public AWSStaticCredentialProvider(AWSCredential credential)
+    public SigStaticCredentialProvider(SigCredential credential)
     {
         this.credential = credential;
     }
 
     @Override
-    public AWSCredential getCredential() {
+    public SigCredential getCredential() {
         return credential;
     }
 

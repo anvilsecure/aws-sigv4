@@ -11,13 +11,13 @@ optional profile parameters, this dialog can be used to prompt the user for them
 region are optional is because an empty value means the region and service from the original request should be used. however, when adding
 a new signature, service and region are not available in the original request.
  */
-public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
+public class SigProfileEditorReadOnlyDialog extends SigProfileEditorDialog
 {
-    private AWSProfile editedProfile;
+    private SigProfile editedProfile;
 
-    public AWSProfile getProfile() { return editedProfile; }
+    public SigProfile getProfile() { return editedProfile; }
 
-    public AWSProfileEditorReadOnlyDialog(Frame owner, String title, boolean modal, AWSProfile profile)
+    public SigProfileEditorReadOnlyDialog(Frame owner, String title, boolean modal, SigProfile profile)
     {
         super(owner, title, modal, profile);
         this.okButton.removeActionListener(this.okButton.getActionListeners()[0]);
@@ -28,7 +28,7 @@ public class AWSProfileEditorReadOnlyDialog extends AWSProfileEditorDialog
             {
                 //TODO reprompt if no region or service given? will result in blank fields for add signature
                 if (profile != null) {
-                    editedProfile = new AWSProfile.Builder(profile)
+                    editedProfile = new SigProfile.Builder(profile)
                             .withRegion(regionTextField.getText())
                             .withService(serviceTextField.getText())
                             .build();

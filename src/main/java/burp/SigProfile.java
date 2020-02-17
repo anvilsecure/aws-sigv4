@@ -1,6 +1,6 @@
 package burp;
 
-import burp.error.AWSCredentialProviderException;
+import burp.error.SigCredentialProviderException;
 
 import javax.swing.*;
 import java.io.IOException;
@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 Class represents a credential set for AWS services. Provides functionality
 to import credentials from environment vars or a credential file.
 */
-public class AWSProfile implements Cloneable
+public class SigProfile implements Cloneable
 {
     public static final int DEFAULT_STATIC_PRIORITY = 100;
     public static final int DEFAULT_HTTP_PRIORITY = 20;
@@ -35,7 +35,7 @@ public class AWSProfile implements Cloneable
     // accessKeyId is used to uniquely identify this profile for signing
     private String accessKeyId;
 
-    private HashMap<String, AWSCredentialProvider> credentialProviders;
+    private HashMap<String, SigCredentialProvider> credentialProviders;
     private HashMap<String, Integer> credentialProvidersPriority;
 
     // see https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
@@ -45,33 +45,33 @@ public class AWSProfile implements Cloneable
     public static final Pattern servicePattern = Pattern.compile("^[\\w_-]{1,64}$");
 
     public String getName() { return this.name; }
-    public AWSAssumeRole getAssumeRole()
+    public SigAssumeRoleCredentialProvider getAssumeRole()
     {
         return getAssumeRoleCredentialProvider();
     }
 
-    private AWSCredentialProvider getCredentialProviderByName(final String name) {
+    private SigCredentialProvider getCredentialProviderByName(final String name) {
         return credentialProviders.getOrDefault(name, null);
     }
 
-    public AWSStaticCredentialProvider getStaticCredentialProvider()
+    public SigStaticCredentialProvider getStaticCredentialProvider()
     {
-        return (AWSStaticCredentialProvider) getCredentialProviderByName(AWSStaticCredentialProvider.PROVIDER_NAME);
+        return (SigStaticCredentialProvider) getCredentialProviderByName(SigStaticCredentialProvider.PROVIDER_NAME);
     }
 
-    public AWSAssumeRole getAssumeRoleCredentialProvider()
+    public SigAssumeRoleCredentialProvider getAssumeRoleCredentialProvider()
     {
-        return (AWSAssumeRole) getCredentialProviderByName(AWSAssumeRole.PROVIDER_NAME);
+        return (SigAssumeRoleCredentialProvider) getCredentialProviderByName(SigAssumeRoleCredentialProvider.PROVIDER_NAME);
     }
 
-    public AWSHttpProvider getHttpCredentialProvider()
+    public SigHttpCredentialProvider getHttpCredentialProvider()
     {
-        return (AWSHttpProvider) getCredentialProviderByName(AWSHttpProvider.PROVIDER_NAME);
+        return (SigHttpCredentialProvider) getCredentialProviderByName(SigHttpCredentialProvider.PROVIDER_NAME);
     }
 
     public int getStaticCredentialProviderPriority()
     {
-        AWSCredentialProvider provider = getStaticCredentialProvider();
+        SigCredentialProvider provider = getStaticCredentialProvider();
         if (provider != null)
             return credentialProvidersPriority.get(provider.getName());
         return DISABLED_PRIORITY;
@@ -79,7 +79,7 @@ public class AWSProfile implements Cloneable
 
     public int getAssumeRolePriority()
     {
-        AWSCredentialProvider provider = getAssumeRoleCredentialProvider();
+        SigCredentialProvider provider = getAssumeRoleCredentialProvider();
         if (provider != null)
             return credentialProvidersPriority.get(provider.getName());
         return DISABLED_PRIORITY;
@@ -87,7 +87,7 @@ public class AWSProfile implements Cloneable
 
     public int getHttpCredentialProviderPriority()
     {
-        AWSCredentialProvider provider = getHttpCredentialProvider();
+        SigCredentialProvider provider = getHttpCredentialProvider();
         if (provider != null)
             return credentialProvidersPriority.get(provider.getName());
         return DISABLED_PRIORITY;
@@ -123,31 +123,31 @@ public class AWSProfile implements Cloneable
         if (profileNamePattern.matcher(name).matches())
             this.name = name;
         else
-            throw new IllegalArgumentException("AWSProfile name must match pattern "+profileNamePattern.pattern());
+            throw new IllegalArgumentException("Profile name must match pattern "+profileNamePattern.pattern());
     }
 
     private void setRegion(final String region) {
         if (region.equals("") || regionPattern.matcher(region).matches())
             this.region = region;
         else
-            throw new IllegalArgumentException("AWSProfile region must match pattern " + regionPattern.pattern());
+            throw new IllegalArgumentException("Profile region must match pattern " + regionPattern.pattern());
     }
 
     private void setService(final String service) {
         if (service.equals("") || servicePattern.matcher(service).matches())
             this.service = service;
         else
-            throw new IllegalArgumentException("AWSProfile service must match pattern " + servicePattern.pattern());
+            throw new IllegalArgumentException("Profile service must match pattern " + servicePattern.pattern());
     }
 
     private void setAccessKeyId(final String accessKeyId) {
         if (accessKeyIdPattern.matcher(accessKeyId).matches())
             this.accessKeyId = accessKeyId;
         else
-            throw new IllegalArgumentException("AWSProfile accessKeyId must match pattern " + accessKeyIdPattern.pattern());
+            throw new IllegalArgumentException("Profile accessKeyId must match pattern " + accessKeyIdPattern.pattern());
     }
 
-    private void setCredentialProvider(final AWSCredentialProvider provider, final int priority) {
+    private void setCredentialProvider(final SigCredentialProvider provider, final int priority) {
         if (provider == null) {
             throw new IllegalArgumentException("Cannot set a null credential provider");
         }
@@ -156,11 +156,11 @@ public class AWSProfile implements Cloneable
     }
 
     public static class Builder {
-        private AWSProfile profile;
+        private SigProfile profile;
         public Builder(final String name) {
-            this.profile = new AWSProfile(name);
+            this.profile = new SigProfile(name);
         }
-        public Builder(final AWSProfile profile) {
+        public Builder(final SigProfile profile) {
             this.profile = profile.clone();
         }
         public Builder withAccessKeyId(final String accessKeyId) {
@@ -175,29 +175,29 @@ public class AWSProfile implements Cloneable
             this.profile.setService(service);
             return this;
         }
-        public Builder withCredentialProvider(final AWSCredentialProvider provider, final int priority) {
+        public Builder withCredentialProvider(final SigCredentialProvider provider, final int priority) {
             // should only have 1 of each type: permanent/static, assumeRole, etc
             this.profile.setCredentialProvider(provider, priority);
             return this;
         }
-        public AWSProfile build() {
+        public SigProfile build() {
             return this.profile;
         }
     }
 
-    public AWSProfile clone() {
-        AWSProfile.Builder builder = new AWSProfile.Builder(this.name)
+    public SigProfile clone() {
+        SigProfile.Builder builder = new SigProfile.Builder(this.name)
                 .withRegion(this.region)
                 .withService(this.service);
-        for (AWSCredentialProvider provider : this.credentialProviders.values()) {
+        for (SigCredentialProvider provider : this.credentialProviders.values()) {
             builder.withCredentialProvider(provider, this.credentialProvidersPriority.get(provider.getName()));
         }
         return builder.build();
     }
 
-    private AWSProfile() {};
+    private SigProfile() {};
 
-    private AWSProfile(final String name)
+    private SigProfile(final String name)
     {
         setName(name);
         this.accessKeyId = null;
@@ -207,24 +207,24 @@ public class AWSProfile implements Cloneable
         this.service = "";
     }
 
-    public static AWSProfile fromEnvironment()
+    public static SigProfile fromEnvironment()
     {
         final String envAccessKeyId = System.getenv("AWS_ACCESS_KEY_ID");
         if (envAccessKeyId != null) {
             final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
             if (envSecretKey != null) {
-                AWSProfile.Builder builder = new AWSProfile.Builder("ENV");
+                SigProfile.Builder builder = new SigProfile.Builder("ENV");
                 builder.withAccessKeyId(envAccessKeyId);
                 if (System.getenv("AWS_DEFAULT_REGION") != null) {
                     builder.withRegion(System.getenv("AWS_DEFAULT_REGION"));
                 }
                 final String envSessionToken = System.getenv("AWS_SESSION_TOKEN");
                 if (envSessionToken == null) {
-                    builder.withCredentialProvider(new AWSStaticCredentialProvider(new AWSPermanentCredential(envAccessKeyId, envSecretKey)), DEFAULT_STATIC_PRIORITY);
+                    builder.withCredentialProvider(new SigStaticCredentialProvider(new SigStaticCredential(envAccessKeyId, envSecretKey)), DEFAULT_STATIC_PRIORITY);
                 }
                 else {
-                    builder.withCredentialProvider(new AWSStaticCredentialProvider(
-                            new AWSTemporaryCredential(envAccessKeyId, envSecretKey, envSessionToken, Instant.now().getEpochSecond() + 900)), DEFAULT_STATIC_PRIORITY);
+                    builder.withCredentialProvider(new SigStaticCredentialProvider(
+                            new SigTemporaryCredential(envAccessKeyId, envSecretKey, envSessionToken, Instant.now().getEpochSecond() + 900)), DEFAULT_STATIC_PRIORITY);
                 }
                 return builder.build();
             }
@@ -232,11 +232,11 @@ public class AWSProfile implements Cloneable
         return null;
     }
 
-    public static ArrayList<AWSProfile> fromCredentialPath(final Path path)
+    public static ArrayList<SigProfile> fromCredentialPath(final Path path)
     {
         // parse credential file
-        ArrayList<AWSProfile> profileList = new ArrayList<>();
-        AWSConfigParser parser = new AWSConfigParser(path);
+        ArrayList<SigProfile> profileList = new ArrayList<>();
+        ConfigParser parser = new ConfigParser(path);
         HashMap<String, HashMap<String, String>> credentials = parser.parse();
 
         // get aws cli config for region info (if it exists). favor path defined in environment. fallback to default path.
@@ -247,7 +247,7 @@ public class AWSProfile implements Cloneable
                 configPath = Paths.get(envFile);
             }
         }
-        HashMap<String, HashMap<String, String>> config = (new AWSConfigParser(configPath)).parse();
+        HashMap<String, HashMap<String, String>> config = (new ConfigParser(configPath)).parse();
 
         // build profile list
         for (final String name : credentials.keySet()) {
@@ -255,16 +255,16 @@ public class AWSProfile implements Cloneable
             if (section.containsKey("aws_access_key_id") && section.containsKey("aws_secret_access_key")) {
                 HashMap<String, String> profile = config.getOrDefault("profile " + name, new HashMap<>());
                 final String region = profile.getOrDefault("region", section.getOrDefault("region", ""));
-                AWSProfile.Builder newProfileBuilder = new AWSProfile.Builder(name)
+                SigProfile.Builder newProfileBuilder = new SigProfile.Builder(name)
                         .withAccessKeyId(section.get("aws_access_key_id"))
                         .withRegion(region)
                         .withService("");
                 try {
-                    final AWSPermanentCredential permanentCredential = new AWSPermanentCredential(section.get("aws_access_key_id"), section.get("aws_secret_access_key"));
-                    newProfileBuilder.withCredentialProvider(new AWSStaticCredentialProvider(permanentCredential), DEFAULT_STATIC_PRIORITY);
+                    final SigStaticCredential staticCredential = new SigStaticCredential(section.get("aws_access_key_id"), section.get("aws_secret_access_key"));
+                    newProfileBuilder.withCredentialProvider(new SigStaticCredentialProvider(staticCredential), DEFAULT_STATIC_PRIORITY);
                     final String roleArn = profile.getOrDefault("role_arn", section.getOrDefault("role_arn", null));
                     if (roleArn != null) {
-                        AWSAssumeRole assumeRole = new AWSAssumeRole.Builder(roleArn, permanentCredential)
+                        SigAssumeRoleCredentialProvider assumeRole = new SigAssumeRoleCredentialProvider.Builder(roleArn, staticCredential)
                                 .tryRoleSessionName(profile.getOrDefault("role_session_name", section.getOrDefault("role_session_name", null)))
                                 .withDurationSeconds(Integer.parseInt(profile.getOrDefault("duration_seconds", section.getOrDefault("duration_seconds", "0"))))
                                 .tryExternalId(profile.getOrDefault("external_id", section.getOrDefault("external_id", null)))
@@ -283,12 +283,12 @@ public class AWSProfile implements Cloneable
     private String getExportString()
     {
         String export = "";
-        AWSCredentialProvider provider = getStaticCredentialProvider();
+        SigCredentialProvider provider = getStaticCredentialProvider();
         if (provider != null) {
             export += String.format("[%s]\n", this.name);
             try {
                 export += provider.getCredential().getExportString();
-            } catch (AWSCredentialProviderException exc) {
+            } catch (SigCredentialProviderException exc) {
                 logger.error("Failed to export credential: "+export);
                 return "";
             }
@@ -296,7 +296,7 @@ public class AWSProfile implements Cloneable
                 export += String.format("region = %s\n", this.region);
             }
 
-            AWSAssumeRole assumeRole = getAssumeRole();
+            SigAssumeRoleCredentialProvider assumeRole = getAssumeRole();
             if (assumeRole != null) {
                 final String roleArn = assumeRole.getRoleArn();
                 if (roleArn != null) {
@@ -319,10 +319,10 @@ public class AWSProfile implements Cloneable
         return export;
     }
 
-    public static int exportToFilePath(final List<AWSProfile> awsProfiles, final Path exportPath)
+    public static int exportToFilePath(final List<SigProfile> sigProfiles, final Path exportPath)
     {
         List<String> exportLines = new ArrayList<>();
-        for (final AWSProfile profile : awsProfiles) {
+        for (final SigProfile profile : sigProfiles) {
             final String export = profile.getExportString();
             if (!export.equals("")) {
                 exportLines.add(export);
@@ -339,10 +339,10 @@ public class AWSProfile implements Cloneable
         return exportLines.size();
     }
 
-    public AWSCredentialProvider getActiveProvider()
+    public SigCredentialProvider getActiveProvider()
     {
         // remove providers that are disabled (priority 0) and then sort remaining to find highest priority provider
-        List<AWSCredentialProvider> providerList = credentialProviders
+        List<SigCredentialProvider> providerList = credentialProviders
                 .values()
                 .stream()
                 .filter(p -> credentialProvidersPriority.get(p.getName()) >= 0)
@@ -354,9 +354,9 @@ public class AWSProfile implements Cloneable
         return null;
     }
 
-    public AWSCredential getCredential()
+    public SigCredential getCredential()
     {
-        final AWSCredentialProvider provider = getActiveProvider();
+        final SigCredentialProvider provider = getActiveProvider();
         if (provider == null) {
             // this should never occur since a profile can't be created without a provider
             JOptionPane.showMessageDialog(BurpExtender.getBurp().getUiComponent(), "No active credential provider for profile: " + getName());
@@ -365,7 +365,7 @@ public class AWSProfile implements Cloneable
 
         try {
             return provider.getCredential();
-        } catch (AWSCredentialProviderException exc) {
+        } catch (SigCredentialProviderException exc) {
             logger.error("Failed to get credential: "+exc.getMessage());
             JOptionPane.showMessageDialog(BurpExtender.getBurp().getUiComponent(), exc.getMessage());
             throw new RuntimeException(exc.getMessage());

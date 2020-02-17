@@ -14,19 +14,19 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
-class NewAWSProfile
+class NewSigProfile
 {
     public String source;
-    public AWSProfile awsProfile;
+    public SigProfile sigProfile;
 
-    public NewAWSProfile(AWSProfile awsProfile, String source)
+    public NewSigProfile(SigProfile sigProfile, String source)
     {
-        this.awsProfile = awsProfile;
+        this.sigProfile = sigProfile;
         this.source = source;
     }
 }
 
-public class AWSProfileImportDialog extends JDialog
+public class SigProfileImportDialog extends JDialog
 {
     private static int SELECT_COLUMN_INDEX = 0;
     private static int NAME_COLUMN_INDEX = 1;
@@ -35,9 +35,9 @@ public class AWSProfileImportDialog extends JDialog
     private BurpExtender burp = BurpExtender.getBurp();
     private JTable profileTable;
     private JLabel hintLabel;
-    private HashMap<String, NewAWSProfile> profileNameMap;
+    private HashMap<String, NewSigProfile> profileNameMap;
 
-    public AWSProfileImportDialog(Frame owner, String title, boolean modal)
+    public SigProfileImportDialog(Frame owner, String title, boolean modal)
     {
         super(owner, title, modal);
         this.profileNameMap = new HashMap<>();
@@ -202,13 +202,13 @@ public class AWSProfileImportDialog extends JDialog
         for (int i = 0; i < model.getRowCount(); i++) {
             if ((boolean)model.getValueAt(i, SELECT_COLUMN_INDEX)) {
                 final String name = (String) model.getValueAt(i, NAME_COLUMN_INDEX);
-                AWSProfile profile = this.profileNameMap.get(name).awsProfile;
+                SigProfile profile = this.profileNameMap.get(name).sigProfile;
                 burp.addProfile(profile);
             }
         }
     }
 
-    private void updateImportTable(ArrayList<AWSProfile> profiles, final String source)
+    private void updateImportTable(ArrayList<SigProfile> profiles, final String source)
     {
         // preserve selection status of current profiles.
         HashMap<String, Boolean> selectionMap =  new HashMap<>();
@@ -219,8 +219,8 @@ public class AWSProfileImportDialog extends JDialog
         }
         model.setRowCount(0); // clear table
 
-        for (AWSProfile profile : profiles) {
-            this.profileNameMap.put(profile.getName(), new NewAWSProfile(profile, source));
+        for (SigProfile profile : profiles) {
+            this.profileNameMap.put(profile.getName(), new NewSigProfile(profile, source));
             if (!selectionMap.containsKey(profile.getName())) {
                 selectionMap.put(profile.getName(), true);
             }
@@ -231,8 +231,8 @@ public class AWSProfileImportDialog extends JDialog
         Collections.sort(profileNames);
 
         for (final String name : profileNames) {
-            NewAWSProfile newProfile = this.profileNameMap.get(name);
-            model.addRow(new Object[]{selectionMap.get(name), newProfile.awsProfile.getName(), newProfile.awsProfile.getAccessKeyIdForProfileSelection(), newProfile.source});
+            NewSigProfile newProfile = this.profileNameMap.get(name);
+            model.addRow(new Object[]{selectionMap.get(name), newProfile.sigProfile.getName(), newProfile.sigProfile.getAccessKeyIdForProfileSelection(), newProfile.source});
         }
     }
 
@@ -269,7 +269,7 @@ public class AWSProfileImportDialog extends JDialog
         if (!Files.exists(credPath)) {
             burp.logger.error(String.format("Attempted to import credentials from non-existent file: %s", credPath));
         }
-        ArrayList<AWSProfile> profiles = AWSProfile.fromCredentialPath(credPath);
+        ArrayList<SigProfile> profiles = SigProfile.fromCredentialPath(credPath);
         burp.logger.info(String.format("Importing %d credentials from: %s", profiles.size(), credPath));
         updateImportTable(profiles, credPath.toString());
     }
@@ -277,8 +277,8 @@ public class AWSProfileImportDialog extends JDialog
     private void importProfilesFromEnvironment()
     {
         // try to import creds from environment variables
-        ArrayList<AWSProfile> profiles = new ArrayList<>();
-        AWSProfile profile = AWSProfile.fromEnvironment();
+        ArrayList<SigProfile> profiles = new ArrayList<>();
+        SigProfile profile = SigProfile.fromEnvironment();
         if (profile != null) {
             profiles.add(profile);
         }

@@ -12,13 +12,13 @@ import java.util.regex.Pattern;
 class for parsing aws cli config files.
 see https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html
  */
-public class AWSConfigParser
+public class ConfigParser
 {
     private Path path;
     private final Pattern sectionPattern = Pattern.compile("^\\s*\\[\\s*([^]]{1,256}?)\\s*\\]\\s*$");
     private final Pattern valuePattern = Pattern.compile("^\\s*([^=]{1,256}?)\\s*=\\s*(.{1,256}?)\\s*$");
 
-    public AWSConfigParser(final Path path)
+    public ConfigParser(final Path path)
     {
         this.path = path;
     }
