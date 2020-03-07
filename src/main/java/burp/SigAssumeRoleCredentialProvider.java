@@ -1,6 +1,7 @@
 package burp;
 
 import burp.error.SigCredentialProviderException;
+import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sts.StsClient;
@@ -125,7 +126,7 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
             return this;
         }
         public Builder tryRoleSessionName(final String sessionName) {
-            if (sessionName != null && !sessionName.equals(""))
+            if (StringUtils.isNotEmpty(sessionName))
                 withRoleSessionName(sessionName);
             else
                 this.assumeRole.sessionName = createDefaultRoleSessionName();
@@ -147,7 +148,7 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
             return this;
         }
         public Builder tryExternalId(final String externalId) {
-            if (externalId != null && !externalId.equals(""))
+            if (StringUtils.isNotEmpty(externalId))
                 withExternalId(externalId);
             else
                 this.assumeRole.externalId = "";
@@ -201,7 +202,7 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
                 .roleArn(this.roleArn)
                 .roleSessionName(this.sessionName)
                 .durationSeconds(this.durationSeconds);
-        if (this.externalId != null && !this.externalId.equals("")) {
+        if (StringUtils.isNotEmpty(this.externalId)) {
             requestBuilder.externalId(this.externalId);
         }
 
