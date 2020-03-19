@@ -1342,16 +1342,18 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             return null;
         }
 
-        // s3 will complain about duplicate headers that the signer itself adds (e.g. X-Amz-Date)
+        // for s3, use payload signing if present in the original request. default to no signing
         boolean signedPayload = false;
         if (StringUtils.equalsIgnoreCase(service, "s3")) {
-            // check if original request had a signed payload
             if (signedHeaderMap.containsKey("x-amz-content-sha256")) {
                 signedPayload = !StringUtils.equalsIgnoreCase(signedHeaderMap.get("x-amz-content-sha256").get(0), "UNSIGNED-PAYLOAD");
             }
-            signedHeaderMap.remove("x-amz-date");
-            signedHeaderMap.remove("x-amz-content-sha256");
+            // s3 signer may throw an error if this header is already present
+            signedHeaderMap.remove("x-amz-content-sha256"); // s3 payload hash
         }
+
+        // signer will add these headers and may complain if they're already present
+        signedHeaderMap.remove("x-amz-date"); // all signed requests have this
 
         final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);
         final SdkHttpFullRequest awsRequest = SdkHttpFullRequest.builder()
