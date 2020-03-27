@@ -124,5 +124,5 @@ Editing a profile
 Enable debug output for the aws sdk by adding the following property at the command line:
 
 ```
--Dorg.slf4j.simpleLogger.defaultLogLevel=debug
+-Dorg.slf4j.simpleLogger.defaultLogLevel=trace
 ```
