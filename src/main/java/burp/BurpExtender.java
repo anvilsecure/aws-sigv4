@@ -1,5 +1,6 @@
 package burp;
 
+import org.apache.commons.lang3.StringUtils;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
@@ -18,7 +19,6 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sts.StsClient;
 import software.amazon.awssdk.services.sts.model.GetCallerIdentityResponse;
 import software.amazon.awssdk.services.sts.model.StsException;
-import org.apache.commons.lang3.StringUtils;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -1356,12 +1356,17 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         signedHeaderMap.remove("x-amz-date"); // all signed requests have this
 
         final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);
-        final SdkHttpFullRequest awsRequest = SdkHttpFullRequest.builder()
+        SdkHttpFullRequest.Builder awsRequestBuilder = SdkHttpFullRequest.builder()
                 .headers(signedHeaderMap)
                 .uri(uri)
                 .method(SdkHttpMethod.fromValue(request.getMethod()))
-                .contentStreamProvider(() -> new ByteArrayInputStream(body))
-                .build();
+                .contentStreamProvider(() -> new ByteArrayInputStream(body));
+        // add query string params as these are not captured by builder uri
+        request.getParameters().stream().forEach(p -> {
+            awsRequestBuilder.appendRawQueryParameter(helpers.urlDecode(p.getName()), helpers.urlDecode(p.getValue()));
+        });
+
+        final SdkHttpFullRequest awsRequest = awsRequestBuilder.build();
 
         // sign the request. can throw IllegalArgumentException
         SdkHttpFullRequest signedRequest;
