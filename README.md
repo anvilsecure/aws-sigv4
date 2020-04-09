@@ -1,4 +1,8 @@
 # awsig
+
+This branch implements its own SigV4 signing process and represents the state of the project before
+switching to the aws-sdk for computing signatures.
+
 This is a Burp extension for signing AWS requests with SigV4. Signature Version 4 is a process to add authentication information to AWS HTTP requests. More information can be found here: https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html
 
 SigV4 uses a timestamp to give signatures a lifetime of 15 minutes. When using tools like Burp repeater, awsig will automatically compute a new signature with the current timestamp. You can also repeat requests using different AWS credentials.
