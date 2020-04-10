@@ -46,7 +46,8 @@ import java.util.stream.Collectors;
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
-    private static final String EXTENSION_VERSION = "1.2.2";
+    // make sure to update version in build.gradle as well
+    private static final String EXTENSION_VERSION = "0.2.2";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
     private static final String SETTING_VERSION = "ExtensionVersion";
@@ -79,8 +80,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private JLabel statusLabel;
     private JCheckBox signingEnabledCheckBox;
-    private JComboBox defaultProfileComboBox;
-    private JComboBox logLevelComboBox;
+    private JComboBox<String> defaultProfileComboBox;
+    private JComboBox<Object> logLevelComboBox;
     private JCheckBox persistProfilesCheckBox;
     private JCheckBox inScopeOnlyCheckBox;
     private JTextField additionalSignedHeadersField;
@@ -113,11 +114,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JPanel globalSettingsPanel = new JPanel();
         globalSettingsPanel.setLayout(new GridBagLayout());
         JLabel settingsLabel = new JLabel("Settings");
-        settingsLabel.setForeground(this.textOrange);
+        settingsLabel.setForeground(BurpExtender.textOrange);
         settingsLabel.setFont(sectionFont);
         JPanel checkBoxPanel = new JPanel();
         signingEnabledCheckBox = new JCheckBox("Signing Enabled");
-        signingEnabledCheckBox.setToolTipText("Disable SigV4 signing");
+        signingEnabledCheckBox.setToolTipText("Enable SigV4 signing");
         inScopeOnlyCheckBox = new JCheckBox("In-scope Only");
         inScopeOnlyCheckBox.setToolTipText("Sign in-scope requests only");
         persistProfilesCheckBox = new JCheckBox("Persist Profiles");
@@ -126,8 +127,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         checkBoxPanel.add(inScopeOnlyCheckBox);
         checkBoxPanel.add(persistProfilesCheckBox);
         JPanel otherSettingsPanel = new JPanel();
-        defaultProfileComboBox = new JComboBox();
-        logLevelComboBox = new JComboBox();
+        defaultProfileComboBox = new JComboBox<>();
+        logLevelComboBox = new JComboBox<>();
         otherSettingsPanel.add(new JLabel("Log Level"));
         otherSettingsPanel.add(logLevelComboBox);
         otherSettingsPanel.add(new JLabel("Default Profile"));
@@ -224,7 +225,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         //
         JPanel profilePanel = new JPanel(new GridBagLayout());
         JLabel profileLabel = new JLabel("AWS Credentials");
-        profileLabel.setForeground(this.textOrange);
+        profileLabel.setForeground(BurpExtender.textOrange);
         profileLabel.setFont(sectionFont);
 
         JButton addProfileButton = new JButton("Add");
@@ -307,7 +308,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c201 = new GridBagConstraints(); c201.gridy = 1; c201.gridwidth = 2; c201.anchor = GridBagConstraints.FIRST_LINE_START; c201.insets = new Insets(10, 0, 10, 0);
         GridBagConstraints c202 = new GridBagConstraints(); c202.gridy = 2; c202.anchor = GridBagConstraints.FIRST_LINE_START;
         additionalSignedHeadersPanel.add(additionalHeadersLabel, c200);
-        additionalSignedHeadersPanel.add(new JLabel("Specify comma-separated headers in the original request to include in the signature."), c201);
+        additionalSignedHeadersPanel.add(new JLabel("Specify comma-separated header names from the request to include in the signature. Defaults are Host and X-Amz-*"), c201);
         additionalSignedHeadersPanel.add(additionalSignedHeadersField, c202);
 
         //
@@ -634,8 +635,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             settings.put(SETTING_PROFILES, this.profileNameMap);
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
         }
-        final String jsonString = getGsonSerializer().toJson(settings);
-        return jsonString;
+        return getGsonSerializer().toJson(settings);
     }
 
     private void importExtensionSettingsFromJson(final String jsonString)
@@ -734,7 +734,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         if (pluginVersion != null)
             logger.info("Found settings for version "+pluginVersion);
         else
-            logger.info("Found settings for version < 1.2.0");
+            logger.info("Found settings for version < 0.2.0");
 
         final String jsonSettingsString = this.callbacks.loadExtensionSetting(BURP_SETTINGS_KEY);
         if (StringUtils.isEmpty(jsonSettingsString)) {
@@ -1188,41 +1188,40 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
     }
 
-    public SigProfile getSigningProfile(List<String> headers)
+    public SigProfile getSigningProfile(final List<String> headers)
     {
-        // check for http header that specifies a signing profile
+        // check for http header that specifies a signing profile. if not specified in the header,
+        // use the default profile. lastly, check Authorization header for an accessKeyId that matches
+        // an existing profile.
+        // XXX if a non-existent profile is specified in the header, error out?
         SigProfile signingProfile = headers.stream()
                 .filter(h -> StringUtils.startsWithIgnoreCase(h, PROFILE_HEADER_NAME+":"))
                 .map(h -> this.profileNameMap.get(splitHeader(h)[1]))
                 .filter(Objects::nonNull)
                 .findFirst()
-                .orElse(null);
+                .orElse(this.profileNameMap.get(getDefaultProfileName()));
 
-        // default profile has next highest priority
         if (signingProfile == null) {
-            signingProfile = this.profileNameMap.get(getDefaultProfileName());
-        }
-
-        // if still cannot determine profile, find matching accessKeyId
-        final List<String> authorizationHeaders = headers.stream()
-                .filter(h -> StringUtils.startsWithIgnoreCase(h, "Authorization:"))
-                .collect(Collectors.toList());
-        for (final String value : authorizationHeaders) {
-            Matcher matcher = authorizationHeaderRegex.matcher(value);
-            if (matcher.matches()) {
-                if (signingProfile == null) {
-                    signingProfile = this.profileKeyIdMap.get(matcher.group("accessKeyId"));
+            // if still cannot determine profile, find matching accessKeyId
+            final List<String> authorizationHeaders = headers.stream()
+                    .filter(h -> StringUtils.startsWithIgnoreCase(h, "Authorization:"))
+                    .collect(Collectors.toList());
+            for (final String value : authorizationHeaders) {
+                Matcher matcher = authorizationHeaderRegex.matcher(value);
+                if (matcher.matches()) {
+                    if (this.profileKeyIdMap.containsKey(matcher.group("accessKeyId"))) {
+                        signingProfile = this.profileKeyIdMap.get(matcher.group("accessKeyId"));
+                        SigProfile.Builder builder = new SigProfile.Builder(signingProfile);
+                        if (StringUtils.isEmpty(signingProfile.getService())) {
+                            builder.withService(matcher.group("service"));
+                        }
+                        if (StringUtils.isEmpty(signingProfile.getRegion())) {
+                            builder.withRegion(matcher.group("region"));
+                        }
+                        signingProfile = builder.build();
+                        break;
+                    }
                 }
-
-                SigProfile.Builder builder = new SigProfile.Builder(signingProfile);
-                if (StringUtils.isEmpty(signingProfile.getService())) {
-                    builder.withService(matcher.group("service"));
-                }
-                if (StringUtils.isEmpty(signingProfile.getRegion())) {
-                    builder.withRegion(matcher.group("region"));
-                }
-                signingProfile = builder.build();
-                break;
             }
         }
 
@@ -1268,17 +1267,19 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     service = matcher.group("service");
                     // get headers to sign
                     Arrays.stream(matcher.group("headers").split(";"))
-                            .forEach(h -> signedHeaderSet.add(h.toLowerCase()));
+                            .map(String::toLowerCase)
+                            .forEach(signedHeaderSet::add);
                     break;
                 }
             }
         }
 
-        // build map of headers to sign. there are 4 checks:
+        // Build map of headers to sign. there are 4 checks:
         //   1) if header was signed in original request
         //   2) custom signed headers specified in UI
         //   3) name starts with "X-Amz-"
         //   4) additional signed header (name only) from UI
+        // Note that aws-sdk will refuse to sign some headers such as User-Agent
         Map<String, List<String>> signedHeaderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         Map<String, List<String>> unsignedHeaderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         List<String> allHeaders = request.getHeaders();
@@ -1362,7 +1363,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .method(SdkHttpMethod.fromValue(request.getMethod()))
                 .contentStreamProvider(() -> new ByteArrayInputStream(body));
         // add query string params as these are not captured by builder uri
-        request.getParameters().stream().forEach(p -> {
+        request.getParameters().forEach(p -> {
             awsRequestBuilder.appendRawQueryParameter(helpers.urlDecode(p.getName()), helpers.urlDecode(p.getValue()));
         });
 

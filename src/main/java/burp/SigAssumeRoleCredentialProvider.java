@@ -32,7 +32,7 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
     private static long CREDENTIAL_RENEWAL_AGE = 30; // seconds before expiration
     public static final int CREDENTIAL_LIFETIME_MIN = 900;
     public static final int CREDENTIAL_LIFETIME_MAX = 43200;
-    public static final String ROLE_SESSION_NAME_DEFAULT_PREFIX = "BurpAwsig";
+    public static final String ROLE_SESSION_NAME_DEFAULT_PREFIX = "BurpSigV4";
 
     public String getRoleArn()
     {

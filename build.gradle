@@ -2,9 +2,9 @@ plugins {
     id 'java-library'
 }
 
-version '1.2.2-SNAPSHOT'
+version '0.2.2-all'
 
-sourceCompatibility = 1.8
+compileJava.sourceCompatibility = JavaVersion.VERSION_11
 
 repositories {
     mavenCentral()
@@ -13,7 +13,7 @@ repositories {
 dependencies {
     implementation 'net.portswigger.burp.extender:burp-extender-api:2.1'
     implementation 'com.google.code.gson:gson:2.8.6'
-    implementation platform('software.amazon.awssdk:bom:2.10.55')
+    implementation platform('software.amazon.awssdk:bom:2.11.12')
     implementation 'software.amazon.awssdk:auth'
     implementation 'software.amazon.awssdk:sts'
     implementation 'software.amazon.awssdk:apache-client'

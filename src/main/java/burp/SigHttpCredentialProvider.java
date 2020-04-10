@@ -24,19 +24,19 @@ import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
-import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class SigHttpCredentialProvider implements SigCredentialProvider
 {
     public static final String PROVIDER_NAME = "HttpGet";
+    public static final int HTTP_TIMEOUT_SECONDS = 10;
 
     private URI requestUrl;
     private transient SSLContext sslContext;
     private transient HttpClient httpClient;
     private SigCredential credential;
     private Path caBundlePath;
-
-    private final transient BurpExtender burp = BurpExtender.getBurp();
 
     public URI getUrl()
     {
@@ -87,7 +87,11 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
                 KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
                 keyStore.load(null, null);
                 int count = 0;
-                ArrayList<X509Certificate> caCertList = (ArrayList<X509Certificate>) certificateFactory.generateCertificates(new FileInputStream(caBundlePath.toString()));
+                List<X509Certificate> caCertList = certificateFactory
+                        .generateCertificates(new FileInputStream(caBundlePath.toString()))
+                        .stream()
+                        .map(X509Certificate.class::cast)
+                        .collect(Collectors.toList());
                 for (X509Certificate cert : caCertList) {
                     keyStore.setCertificateEntry(String.format("caCert-%d", count), cert);
                     count++;
@@ -117,6 +121,7 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .GET()
+                .timeout(Duration.ofSeconds(HTTP_TIMEOUT_SECONDS))
                 .uri(requestUrl);
 
         HttpResponse<String> httpResponse;
@@ -124,8 +129,8 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
             httpResponse = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
         }
         catch (InterruptedException | IOException exc) {
-            burp.logger.error("HttpGet failed: "+exc.getMessage());
-            throw new SigCredentialProviderException("Failed to send GET request to "+requestUrl);
+            LogWriter.getLogger().error("HttpGet failed: "+exc.getMessage());
+            throw new SigCredentialProviderException(String.format("Failed to send GET request to %s: %s", requestUrl, exc.getMessage()));
         }
 
         if (httpResponse.statusCode() != 200)

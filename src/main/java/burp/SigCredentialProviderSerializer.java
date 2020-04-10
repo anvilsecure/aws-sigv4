@@ -24,8 +24,10 @@ public class SigCredentialProviderSerializer implements JsonSerializer<SigCreden
         obj.remove(CLASS_NAME); // this is a meta property
         Class<SigCredentialProvider> providerClass;
         try {
-            providerClass = (Class<SigCredentialProvider>) Class.forName(className);
-        } catch (ClassNotFoundException exc) {
+            @SuppressWarnings("unchecked")
+            Class<SigCredentialProvider> tempProviderClass = (Class<SigCredentialProvider>) Class.forName(className);
+            providerClass = tempProviderClass;
+        } catch (ClassNotFoundException | ClassCastException exc) {
             throw new JsonParseException("Failed to instantiate class: "+className);
         }
         return context.deserialize(obj, providerClass);
