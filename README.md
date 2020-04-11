@@ -53,9 +53,9 @@ Profiles will be saved in the Burp settings store, including AWS keys, if "Persi
 is checked. You can also "Export" credentials to a file for importing later or for use
 with the aws cli.
 
-### Authentication Methods
+### Credentials
 
-Profiles can have multiple authentication methods.
+Configure profiles to obtain credentials in any of the following ways.
 
 **Static Credentials**
 
