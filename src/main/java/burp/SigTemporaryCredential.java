@@ -7,12 +7,16 @@ This class represents temporary credentials that utilize a session token in addi
  */
 public class SigTemporaryCredential extends SigCredential
 {
-    //protected static final Pattern sessionTokenPattern = Pattern.compile("^[a-zA-Z0-9/+]{40,512}[=]{,2}$") // not sure
+    private static final long CREDENTIAL_RENEWAL_AGE = 30; // seconds before expiration
 
     private long expireTimeEpochSeconds;
     private String sessionToken;
 
     private SigTemporaryCredential() {};
+
+    public static boolean shouldRenewCredential(final SigTemporaryCredential credential) {
+        return ((credential == null) || (credential.secondsToExpire() < CREDENTIAL_RENEWAL_AGE));
+    }
 
     public SigTemporaryCredential(String accessKeyId, String secretKey, String sessionToken, long expireTimeEpochSeconds)
     {

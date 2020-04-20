@@ -1,5 +1,7 @@
 package burp;
 
+import org.apache.commons.text.StringEscapeUtils;
+
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
@@ -28,9 +30,9 @@ class NewSigProfile
 
 public class SigProfileImportDialog extends JDialog
 {
-    private static int SELECT_COLUMN_INDEX = 0;
-    private static int NAME_COLUMN_INDEX = 1;
-    private static int KEYID_COLUMN_INDEX = 2;
+    private static final int SELECT_COLUMN_INDEX = 0;
+    private static final int NAME_COLUMN_INDEX = 1;
+    private static final int KEYID_COLUMN_INDEX = 2;
 
     private BurpExtender burp = BurpExtender.getBurp();
     private JTable profileTable;
@@ -159,7 +161,7 @@ public class SigProfileImportDialog extends JDialog
                 try {
                     addSelectedProfiles();
                 } catch (IllegalArgumentException exc) {
-                    hintLabel.setText(String.format("<html><i>%s</i></html>", exc.getMessage().replace("<", "&lt;").replace(">", "&gt;")));
+                    hintLabel.setText(String.format("<html><i>%s</i></html>", StringEscapeUtils.escapeHtml4(exc.getMessage())));
                     return;
                 }
                 setVisible(false);

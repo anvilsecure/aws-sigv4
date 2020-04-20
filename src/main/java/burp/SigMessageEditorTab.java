@@ -8,7 +8,7 @@ this class provides a non-editable request tab for displaying the request after 
 public class SigMessageEditorTab implements IMessageEditorTab
 {
     private IMessageEditorController controller;
-    private BurpExtender burp = BurpExtender.getBurp();
+    private final BurpExtender burp = BurpExtender.getBurp();
     private ITextEditor messageTextEditor;
     private byte[] content;
 
@@ -56,19 +56,23 @@ public class SigMessageEditorTab implements IMessageEditorTab
             }
 
             this.content = content;
+            final SigProfile profile = this.burp.getSigningProfile(requestInfo.getHeaders());
+            this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Signing request..."));
 
-            try {
-                SigProfile profile = BurpExtender.getBurp().getSigningProfile(requestInfo.getHeaders());
-                final byte[] requestBytes = BurpExtender.getBurp().signRequest(this.controller.getHttpService(), this.content, profile);
-                if (requestBytes == null) {
-                    this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Failed to sign request with profile: "+profile.getName()));
+            // thread this to prevent blocking the UI thread. signRequest can trigger an http request if temp credentials are configured.
+            (new Thread(() -> {
+                try {
+                    final byte[] requestBytes = burp.signRequest(this.controller.getHttpService(), this.content, profile);
+                    if (requestBytes == null) {
+                        this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Failed to sign request with profile: " + profile.getName()));
+                        return;
+                    }
+                    this.messageTextEditor.setText(requestBytes);
                     return;
+                } catch (Exception ignored) {
                 }
-                this.messageTextEditor.setText(requestBytes);
-                return;
-            } catch (Exception exc) {
-            }
-            this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Failed to sign message with SigV4"));
+                this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Failed to sign message with SigV4"));
+            })).start();
         }
         else {
             this.messageTextEditor.setText(this.burp.helpers.stringToBytes("SigV4 signing is disabled"));

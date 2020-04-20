@@ -6,7 +6,6 @@ import java.awt.*;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
-import java.nio.file.Path;
 import java.time.Instant;
 
 public class SigProfileEditorDialog extends JDialog
@@ -16,8 +15,8 @@ public class SigProfileEditorDialog extends JDialog
 
     protected JTextField nameTextField;
     protected JTextField profileKeyIdTextField;
-    protected JTextField regionTextField;
-    protected JTextField serviceTextField;
+    protected JTextFieldHint regionTextField;
+    protected JTextFieldHint serviceTextField;
 
     protected JButton okButton;
     protected JPanel providerPanel;
@@ -37,7 +36,6 @@ public class SigProfileEditorDialog extends JDialog
     // Http provider
     private JRadioButton httpProviderRadioButton;
     private JTextField httpProviderUrlField;
-    private JTextField httpProviderCaPathField;
 
     private JLabel statusLabel;
     private String newProfileName = null;
@@ -157,10 +155,6 @@ public class SigProfileEditorDialog extends JDialog
         httpPanel.add(new JLabel("GET Url"), newConstraint(0, 0, GridBagConstraints.LINE_START));
         this.httpProviderUrlField = new JTextFieldHint("", TEXT_FIELD_WIDTH-2, "Required");
         httpPanel.add(this.httpProviderUrlField, newConstraint(1, 0));
-        JButton httpProviderCaPathButton = new JButton("CA Path");
-        httpPanel.add(httpProviderCaPathButton, newConstraint(0, 1, GridBagConstraints.LINE_START));
-        this.httpProviderCaPathField = new JTextFieldHint("", TEXT_FIELD_WIDTH-2, "Optional");
-        httpPanel.add(this.httpProviderCaPathField, newConstraint(1, 1, GridBagConstraints.LINE_START));
         providerPanel.add(httpPanel, newConstraint(0, providerPanelY++, GridBagConstraints.LINE_START));
 
         outerPanel.add(providerPanel, newConstraint(0, outerPanelY++, GridBagConstraints.LINE_START));
@@ -187,14 +181,6 @@ public class SigProfileEditorDialog extends JDialog
         this.staticProviderRadioButton.addActionListener(providerButtonActionListener);
         this.assumeRoleProviderRadioButton.addActionListener(providerButtonActionListener);
         this.httpProviderRadioButton.addActionListener(providerButtonActionListener);
-
-        httpProviderCaPathButton.addActionListener(actionEvent -> {
-            JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
-            chooser.setFileHidingEnabled(false);
-            if (chooser.showOpenDialog(burp.getUiComponent()) == JFileChooser.APPROVE_OPTION) {
-                httpProviderCaPathField.setText(chooser.getSelectedFile().getPath());
-            }
-        });
 
         cancelButton.addActionListener(actionEvent -> {
             setVisible(false);
@@ -232,8 +218,8 @@ public class SigProfileEditorDialog extends JDialog
                 if (!profileKeyIdTextField.getText().equals(""))
                     newProfileBuilder.withAccessKeyId(profileKeyIdTextField.getText());
 
-                if (!httpProviderUrlField.getText().equals("") || !httpProviderCaPathField.getText().equals("")) {
-                    newProfileBuilder.withCredentialProvider(new SigHttpCredentialProvider(httpProviderUrlField.getText(), httpProviderCaPathField.getText()),
+                if (!httpProviderUrlField.getText().equals("")) {
+                    newProfileBuilder.withCredentialProvider(new SigHttpCredentialProvider(httpProviderUrlField.getText()),
                             httpProviderRadioButton.isSelected() ? SigProfile.DEFAULT_HTTP_PRIORITY : SigProfile.DISABLED_PRIORITY);
                 }
 
@@ -275,9 +261,7 @@ public class SigProfileEditorDialog extends JDialog
 
     protected void setStatusLabel(final String message)
     {
-        statusLabel.setText(
-                String.format("<html><div style='width: 400px'><i>%s</i></div></html>",
-                        message.replace("<", "&lt;").replace(">", "&gt;")));
+        statusLabel.setText(BurpExtender.formatMessageHtml(message));
         pack();
     }
 
@@ -314,10 +298,6 @@ public class SigProfileEditorDialog extends JDialog
             }
             if (profile.getHttpCredentialProvider() != null) {
                 httpProviderUrlField.setText(profile.getHttpCredentialProvider().getUrl().toString());
-                final Path caPath = profile.getHttpCredentialProvider().getCaBundlePath();
-                if (caPath != null) {
-                    httpProviderCaPathField.setText(caPath.toString());
-                }
                 if (profile.getHttpCredentialProviderPriority() >= 0) {
                     httpProviderRadioButton.doClick();
                 }
@@ -334,7 +314,7 @@ class JTextFieldHint extends JTextField implements FocusListener
 {
     private Font defaultFont;
     private Color defaultForegroundColor;
-    private Color hintForegroundColor = SigProfileEditorDialog.disabledColor;;
+    final private Color hintForegroundColor = SigProfileEditorDialog.disabledColor;;
     private String hintText;
 
     public JTextFieldHint(String content, int width, String hintText) {
@@ -350,7 +330,7 @@ class JTextFieldHint extends JTextField implements FocusListener
         addFocusListener(this);
         defaultForegroundColor = getForeground();
         if (super.getText().equals("")) {
-            setHintText();
+            displayHintText();
         }
     }
 
@@ -369,11 +349,18 @@ class JTextFieldHint extends JTextField implements FocusListener
             setUserText(text);
         }
         else {
-            setHintText();
+            displayHintText();
         }
     }
 
-    private void setHintText() {
+    protected void setHintText(final String text) {
+        this.hintText = text;
+        if (getFont().isItalic()) {
+            displayHintText();
+        }
+    }
+
+    protected void displayHintText() {
         setFont(new Font(defaultFont.getFamily(), Font.ITALIC, defaultFont.getSize()));
         setForeground(hintForegroundColor);
         super.setText(hintText);
@@ -395,7 +382,7 @@ class JTextFieldHint extends JTextField implements FocusListener
     @Override
     public void focusLost(FocusEvent focusEvent) {
         if (super.getText().equals("")) {
-            setHintText();
+            displayHintText();
         }
     }
 }

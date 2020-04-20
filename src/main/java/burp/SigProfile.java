@@ -1,20 +1,16 @@
 package burp;
 
 import burp.error.SigCredentialProviderException;
+import org.apache.commons.lang3.StringUtils;
 
-import javax.swing.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /*
 Class represents a credential set for AWS services. Provides functionality
@@ -189,6 +185,8 @@ public class SigProfile implements Cloneable
         SigProfile.Builder builder = new SigProfile.Builder(this.name)
                 .withRegion(this.region)
                 .withService(this.service);
+        if (StringUtils.isNotEmpty(this.accessKeyId))
+            builder.withAccessKeyId(this.accessKeyId);
         for (SigCredentialProvider provider : this.credentialProviders.values()) {
             builder.withCredentialProvider(provider, this.credentialProvidersPriority.get(provider.getName()));
         }
@@ -250,6 +248,7 @@ public class SigProfile implements Cloneable
         HashMap<String, HashMap<String, String>> config = (new ConfigParser(configPath)).parse();
 
         // build profile list
+        // TODO add support for source_profile (which can refer to itself)
         for (final String name : credentials.keySet()) {
             HashMap<String, String> section = credentials.get(name);
             if (section.containsKey("aws_access_key_id") && section.containsKey("aws_secret_access_key")) {
@@ -280,12 +279,16 @@ public class SigProfile implements Cloneable
         return profileList;
     }
 
+    private String formatLine(final String fmt, final Object ... params) {
+        return String.format(fmt + System.lineSeparator(), params);
+    }
+
     private String getExportString()
     {
         String export = "";
         SigCredentialProvider provider = getStaticCredentialProvider();
         if (provider != null) {
-            export += String.format("[%s]\n", this.name);
+            export += formatLine("[%s]", this.name);
             try {
                 export += provider.getCredential().getExportString();
             } catch (SigCredentialProviderException exc) {
@@ -293,26 +296,28 @@ public class SigProfile implements Cloneable
                 return "";
             }
             if (this.region != null && regionPattern.matcher(this.region).matches()) {
-                export += String.format("region = %s\n", this.region);
+                export += formatLine("region = %s", this.region);
             }
 
             SigAssumeRoleCredentialProvider assumeRole = getAssumeRole();
             if (assumeRole != null) {
                 final String roleArn = assumeRole.getRoleArn();
                 if (roleArn != null) {
-                    export += String.format("role_arn = %s\n", roleArn);
+                    export += formatLine("role_arn = %s", roleArn);
 
                     final String sessionName = assumeRole.getSessionName();
                     if (sessionName != null) {
-                        export += String.format("role_session_name = %s\n", sessionName);
+                        export += formatLine("role_session_name = %s", sessionName);
                     }
 
                     final String externalId = assumeRole.getExternalId();
                     if (externalId != null) {
-                        export += String.format("external_id = %s\n", externalId);
+                        export += formatLine("external_id = %s", externalId);
                     }
 
-                    export += String.format("duration_seconds = %d\n", assumeRole.getDurationSeconds());
+                    export += formatLine("duration_seconds = %d", assumeRole.getDurationSeconds());
+                    // specify that creds for calling sts:AssumeRole are in the same profile
+                    export += formatLine("source_profile = %s", this.name);
                 }
             }
         }
@@ -341,35 +346,28 @@ public class SigProfile implements Cloneable
 
     public SigCredentialProvider getActiveProvider()
     {
-        // remove providers that are disabled (priority 0) and then sort remaining to find highest priority provider
-        List<SigCredentialProvider> providerList = credentialProviders
+        // remove providers that are disabled (priority -1) and then sort remaining to find highest priority provider
+        return credentialProviders
                 .values()
                 .stream()
                 .filter(p -> credentialProvidersPriority.get(p.getName()) >= 0)
-                .collect(Collectors.toList());
-        Collections.sort(providerList, (a, b) -> credentialProvidersPriority.get(a.getName()) < credentialProvidersPriority.get(b.getName()) ? -1 : 1);
-        if (providerList.size() > 0) {
-            return providerList.get(0);
-        }
-        return null;
+                .min((a, b) -> {
+                    final int ap = credentialProvidersPriority.get(a.getName());
+                    final int bp = credentialProvidersPriority.get(b.getName());
+                    return Integer.compare(ap, bp);
+                })
+                .orElse(null);
     }
 
-    public SigCredential getCredential()
+    public SigCredential getCredential() throws SigCredentialProviderException
     {
         final SigCredentialProvider provider = getActiveProvider();
         if (provider == null) {
             // this should never occur since a profile can't be created without a provider
-            JOptionPane.showMessageDialog(BurpExtender.getBurp().getUiComponent(), "No active credential provider for profile: " + getName());
-            throw new RuntimeException("No active credential provider for profile: " + getName());
+            throw new SigCredentialProviderException("No active credential provider for profile: " + getName());
         }
 
-        try {
-            return provider.getCredential();
-        } catch (SigCredentialProviderException exc) {
-            logger.error("Failed to get credential: "+exc.getMessage());
-            JOptionPane.showMessageDialog(BurpExtender.getBurp().getUiComponent(), exc.getMessage());
-            throw new RuntimeException(exc.getMessage());
-        }
+        return provider.getCredential();
     }
 
     @Override

@@ -10,7 +10,6 @@ import software.amazon.awssdk.services.sts.model.AssumeRoleResponse;
 import software.amazon.awssdk.services.sts.model.Credentials;
 import software.amazon.awssdk.services.sts.model.StsException;
 
-import javax.swing.*;
 import java.util.regex.Pattern;
 
 public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, Cloneable
@@ -25,11 +24,10 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
     private int durationSeconds;
     private String externalId;
 
-    private SigTemporaryCredential temporaryCredential;
+    private transient SigTemporaryCredential temporaryCredential;
     private SigStaticCredential staticCredential;
     private final transient BurpExtender burp = BurpExtender.getBurp();
 
-    private static long CREDENTIAL_RENEWAL_AGE = 30; // seconds before expiration
     public static final int CREDENTIAL_LIFETIME_MIN = 900;
     public static final int CREDENTIAL_LIFETIME_MAX = 43200;
     public static final String ROLE_SESSION_NAME_DEFAULT_PREFIX = "BurpSigV4";
@@ -175,25 +173,34 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
     @Override
     public SigCredential getCredential() throws SigCredentialProviderException
     {
-        if ((this.temporaryCredential == null) || (this.temporaryCredential.secondsToExpire() < CREDENTIAL_RENEWAL_AGE)) {
+        SigTemporaryCredential credentialCopy = this.temporaryCredential;
+        if (SigTemporaryCredential.shouldRenewCredential(credentialCopy)) {
             // signature is expired or about to expire. get new credentials
-            renewCredential();
+            credentialCopy = renewCredential();
         }
-        if (this.temporaryCredential == null) {
+        if (credentialCopy == null) {
             throw new SigCredentialProviderException("Failed to retrieve temp credentials for: "+this.roleArn);
         }
-        return temporaryCredential;
+        return credentialCopy;
     }
 
     /*
-    fetch new temporary credentials.
+    Fetch new temporary credentials. This is synchronized so multiple threads don't try to refresh creds
+    at the same time. The result would be additional, unnecessary calls to STS but is otherwise harmless.
      */
-    private void renewCredential() throws SigCredentialProviderException
+    private synchronized SigTemporaryCredential renewCredential() throws SigCredentialProviderException
     {
+        // ensure creds weren't just renewed by another thread
+        SigTemporaryCredential credentialCopy = this.temporaryCredential;
+        if (!SigTemporaryCredential.shouldRenewCredential(credentialCopy)) {
+            return credentialCopy;
+        }
+
         burp.logger.info("Fetching temporary credentials for role "+this.roleArn);
         this.temporaryCredential = null;
 
         StsClient stsClient = StsClient.builder()
+                .httpClient(new SdkHttpClientForBurp())
                 .region(Region.US_EAST_1)
                 .credentialsProvider(() -> AwsBasicCredentials.create(staticCredential.getAccessKeyId(), staticCredential.getSecretKey()))
                 .build();
@@ -209,14 +216,16 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
         try {
             AssumeRoleResponse roleResponse = stsClient.assumeRole(requestBuilder.build());
             Credentials creds = roleResponse.credentials();
-            this.temporaryCredential = new SigTemporaryCredential(
+            credentialCopy = new SigTemporaryCredential(
                     creds.accessKeyId(),
                     creds.secretAccessKey(),
                     creds.sessionToken(),
                     creds.expiration().getEpochSecond());
         } catch (StsException exc) {
-            JOptionPane.showMessageDialog(BurpExtender.getBurp().getUiComponent(), exc.getMessage());
+            throw new SigCredentialProviderException("Failed to get role credentials: "+exc.getMessage());
         }
+        this.temporaryCredential = credentialCopy;
+        return credentialCopy;
     }
 
 }

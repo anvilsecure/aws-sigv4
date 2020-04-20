@@ -4,181 +4,137 @@ import burp.error.SigCredentialProviderException;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManagerFactory;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.security.*;
-import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
-import java.time.Duration;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.time.DateTimeException;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 
 public class SigHttpCredentialProvider implements SigCredentialProvider
 {
     public static final String PROVIDER_NAME = "HttpGet";
-    public static final int HTTP_TIMEOUT_SECONDS = 10;
+    private static final IBurpExtenderCallbacks callbacks = BurpExtender.getBurp().callbacks;
+    private static final IExtensionHelpers helpers = BurpExtender.getBurp().helpers;
 
-    private URI requestUrl;
-    private transient SSLContext sslContext;
-    private transient HttpClient httpClient;
-    private SigCredential credential;
-    private Path caBundlePath;
+    private URI requestUri;
+    private transient SigCredential credential;
 
     public URI getUrl()
     {
-        return requestUrl;
-    }
-
-    public Path getCaBundlePath()
-    {
-        return caBundlePath;
+        return requestUri;
     }
 
     private SigHttpCredentialProvider() {};
 
-    public SigHttpCredentialProvider(String url, String caBundle) {
-        init(url, caBundle);
+    public SigHttpCredentialProvider(String url) {
+        init(url);
     }
 
-    private void init(String url, String caBundle) {
+    private void init(String url) {
         try {
-            requestUrl = new URL(url).toURI();
+            requestUri = new URL(url).toURI();
         } catch (MalformedURLException | URISyntaxException exc) {
             throw new IllegalArgumentException("Invalid URL provided to HttpProvider: " + url);
         }
 
-        if (!requestUrl.getScheme().equals("http") && !requestUrl.getScheme().equals("https")) {
+        if (!Arrays.asList("http", "https").contains(requestUri.getScheme())) {
             throw new IllegalArgumentException("Invalid protocol. Must be http(s)");
         }
-
-        caBundlePath = null;
-        if (!caBundle.equals("")) {
-            caBundlePath = Paths.get(caBundle);
-        }
     }
 
-    private void initializeHttpClient()
-    {
-        if (httpClient != null)
-            return;
+    private long expirationTimeToEpochSeconds(final String expiry) {
+        try {
+            return Long.parseLong(expiry);
+        } catch (NumberFormatException ignored) {
 
-        if (caBundlePath != null) {
-            if (!Files.exists(caBundlePath)) {
-                throw new IllegalArgumentException("CA bundle path does not exist: " + caBundlePath.toString());
-            }
-
-            try {
-                CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
-                TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-                KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-                keyStore.load(null, null);
-                int count = 0;
-                List<X509Certificate> caCertList = certificateFactory
-                        .generateCertificates(new FileInputStream(caBundlePath.toString()))
-                        .stream()
-                        .map(X509Certificate.class::cast)
-                        .collect(Collectors.toList());
-                for (X509Certificate cert : caCertList) {
-                    keyStore.setCertificateEntry(String.format("caCert-%d", count), cert);
-                    count++;
-                }
-                trustManagerFactory.init(keyStore);
-                sslContext = SSLContext.getInstance("TLS");
-                sslContext.init(null, trustManagerFactory.getTrustManagers(), new SecureRandom());
-            } catch (CertificateException | IOException | NoSuchAlgorithmException | KeyStoreException | KeyManagementException exc) {
-                throw new IllegalArgumentException(String.format("Failed to load ca cert bundle from: %s: %s", caBundlePath, exc));
-            }
         }
 
-        HttpClient.Builder builder = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(15));
-        if (sslContext != null)
-            builder.sslContext(sslContext);
-        httpClient = builder.build();
+        try {
+            return Instant.from(DateTimeFormatter.ISO_INSTANT.parse(expiry)).getEpochSecond();
+        } catch (DateTimeException ignored) {
+
+        }
+
+        throw new IllegalArgumentException("Failed to parse expiration timestamp");
     }
 
-    private void renewCredential() throws SigCredentialProviderException
+    /*
+    NOTE: Synchronization is intentionally omitted here for performance reasons. It is possible that 2 or more
+    threads could refresh the credentials at the same time which is fine since a copy of valid credentials
+    is always returned. For static credentials, synchronization is not desired at all. The http server is free to
+    switch between static and temporary credentials for successive calls.
+     */
+    private SigCredential renewCredential() throws SigCredentialProviderException
     {
+        credential = null;
+        SigCredential newCredential = null;
+        byte[] response;
         try {
-            initializeHttpClient();
-        } catch (Exception exc) {
-            throw new SigCredentialProviderException(exc.getMessage());
+            response = callbacks.makeHttpRequest(requestUri.getHost(),
+                    requestUri.getPort(),
+                    requestUri.getScheme().equalsIgnoreCase("https"),
+                    helpers.buildHttpRequest(requestUri.toURL()));
+        } catch (MalformedURLException e) {
+            throw new IllegalArgumentException("Invalid URL for HttpGet: "+requestUri);
         }
 
-        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .GET()
-                .timeout(Duration.ofSeconds(HTTP_TIMEOUT_SECONDS))
-                .uri(requestUrl);
-
-        HttpResponse<String> httpResponse;
-        try {
-            httpResponse = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
-        }
-        catch (InterruptedException | IOException exc) {
-            LogWriter.getLogger().error("HttpGet failed: "+exc.getMessage());
-            throw new SigCredentialProviderException(String.format("Failed to send GET request to %s: %s", requestUrl, exc.getMessage()));
+        if (response == null) {
+            throw new SigCredentialProviderException("Failed to get response from "+requestUri);
         }
 
-        if (httpResponse.statusCode() != 200)
-            throw new SigCredentialProviderException(String.format("GET request returned error: %d %s", httpResponse.statusCode(), requestUrl));
+        IResponseInfo responseInfo = helpers.analyzeResponse(response);
+        if (responseInfo.getStatusCode() != 200)
+            throw new SigCredentialProviderException(String.format("GET request returned error: %d %s", responseInfo.getStatusCode(), requestUri));
+        final String responseBody = helpers.bytesToString(Arrays.copyOfRange(response, responseInfo.getBodyOffset(), response.length));
 
         try {
             // expect similar object to sts:AssumeRole
-            JsonObject credentialObject = new Gson().fromJson(httpResponse.body(), JsonObject.class);
+            JsonObject credentialObject = new Gson().fromJson(responseBody, JsonObject.class);
             if (credentialObject.has("SessionToken")) {
-                credential = new SigTemporaryCredential(
+                newCredential = new SigTemporaryCredential(
                         credentialObject.get("AccessKeyId").getAsString(),
                         credentialObject.get("SecretAccessKey").getAsString(),
                         credentialObject.get("SessionToken").getAsString(),
-                        credentialObject.get("Expiration").getAsLong());
+                        expirationTimeToEpochSeconds(credentialObject.get("Expiration").getAsString()));
             } else {
-                credential = new SigStaticCredential(
+                newCredential = new SigStaticCredential(
                         credentialObject.get("AccessKeyId").getAsString(),
                         credentialObject.get("SecretAccessKey").getAsString());
             }
-        } catch (JsonParseException | NullPointerException exc) {
+        } catch (JsonParseException | NullPointerException | IllegalArgumentException exc) {
             throw new SigCredentialProviderException("Failed to parse HttpProvider response");
         }
+        credential = newCredential;
+        return newCredential;
     }
 
     @Override
     public SigCredential getCredential() throws SigCredentialProviderException
     {
-        if (credential == null) {
-            renewCredential();
+        SigCredential credentialCopy = credential;
+        if (credentialCopy == null) {
+            credentialCopy = renewCredential();
         }
         else {
-            if (credential.isTemporary()) {
-                final long duration = ((SigTemporaryCredential)credential).secondsToExpire();
-                if (duration <= 30) {
+            if (credentialCopy.isTemporary()) {
+                if (SigTemporaryCredential.shouldRenewCredential(((SigTemporaryCredential)credentialCopy))) {
                     // fewer than 30 seconds until expiration, refresh
-                    renewCredential();
+                    credentialCopy = renewCredential();
                 }
             }
             else {
                 // always refresh permanent credentials. seems counter-intuitive but if the user
-                // isn't just using a static provider there must be a reason
-                renewCredential();
+                // isn't just using a static provider there must be a reason.
+                credentialCopy = renewCredential();
             }
         }
-        if (credential == null) {
-            throw new SigCredentialProviderException("Failed to get credential from "+requestUrl);
+        if (credentialCopy == null) {
+            throw new SigCredentialProviderException("Failed to get credential from "+ requestUri);
         }
-        return credential;
+        return credentialCopy;
     }
 
     @Override

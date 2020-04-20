@@ -116,6 +116,7 @@ buildNumber.properties
 .idea/codeStyles/
 .idea/.name
 .idea/vcs.xml
+.idea/misc.xml
 stale_outputs_checked
 
 #################

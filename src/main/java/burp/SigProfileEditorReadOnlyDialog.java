@@ -20,21 +20,33 @@ public class SigProfileEditorReadOnlyDialog extends SigProfileEditorDialog
     public SigProfileEditorReadOnlyDialog(Frame owner, String title, boolean modal, SigProfile profile)
     {
         super(owner, title, modal, profile);
+        if (profile == null) {
+            throw new IllegalArgumentException("Profile editor dialog requires an existing profile to populate fields");
+        }
+        this.regionTextField.setHintText("Required");
+        this.serviceTextField.setHintText("Required");
         this.okButton.removeActionListener(this.okButton.getActionListeners()[0]);
         this.okButton.addActionListener(new ActionListener()
         {
             @Override
             public void actionPerformed(ActionEvent actionEvent)
             {
-                //TODO reprompt if no region or service given? will result in blank fields for add signature
-                if (profile != null) {
+                try {
+                    // don't allow empty region and service. a user can manually edit these in the message editor if they desire.
+                    final String region = (regionTextField.getText().length() > 0) ? regionTextField.getText() : profile.getRegion();
+                    final String service = (serviceTextField.getText().length() > 0) ? serviceTextField.getText() : profile.getService();
+                    if (region.equals("") || service.equals("")) {
+                        throw new IllegalArgumentException("region and service must not be blank");
+                    }
                     editedProfile = new SigProfile.Builder(profile)
-                            .withRegion(regionTextField.getText())
-                            .withService(serviceTextField.getText())
+                            .withRegion(region)
+                            .withService(service)
                             .build();
+                    setVisible(false);
+                    dispose();
+                } catch (IllegalArgumentException exc) {
+                    setStatusLabel("Invalid settings: " + exc.getMessage());
                 }
-                setVisible(false);
-                dispose();
             }
         });
     }

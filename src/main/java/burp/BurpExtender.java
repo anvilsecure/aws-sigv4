@@ -1,6 +1,8 @@
 package burp;
 
+import burp.error.SigCredentialProviderException;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.text.StringEscapeUtils;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
@@ -42,12 +44,14 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     // make sure to update version in build.gradle as well
-    private static final String EXTENSION_VERSION = "0.2.2";
+    private static final String EXTENSION_VERSION = "0.2.3";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
     private static final String SETTING_VERSION = "ExtensionVersion";
@@ -61,15 +65,28 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String SETTING_ADDITIONAL_SIGNED_HEADER_NAMES = "AdditionalSignedHeaderNames";
     private static final String SETTING_IN_SCOPE_ONLY = "InScopeOnly";
     private static final String SETTING_PRESERVE_HEADER_ORDER = "PreserveHeaderOrder";
+    private static final String SETTING_PRESIGNED_URL_LIFETIME = "PresignedUrlLifetimeInSeconds";
 
     public static final String EXTENSION_NAME = "SigV4"; // Name in extender menu
     public static final String DISPLAY_NAME = "SigV4"; // name for tabs, menu, and other UI components
-    private static final long PRESIGN_DURATION_SECONDS = 900; // pre-signed url lifetime
+
+    // ref: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
+    private static final long PRESIGNED_URL_LIFETIME_MIN_SECONDS = 1;
+    private static final long PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS = 900; // 15 minutes
+    private static final long PRESIGNED_URL_LIFETIME_MAX_SECONDS = 604800; // 7 days
 
     private static final String NO_DEFAULT_PROFILE = "        "; // ensure combobox is visible. SigProfile.profileNamePattern doesn't allow this name
-    private static final String PROFILE_HEADER_NAME = "X-BurpSigV4-Profile";
-    private static final Pattern authorizationHeaderRegex = Pattern.compile("^Authorization: AWS4-HMAC-SHA256 Credential=(?<accessKeyId>[\\w]{16,128})/(?<date>[0-9]{8})/(?<region>[a-z0-9-]{5,64})/(?<service>[a-z0-9-]{1,64})/aws4_request, SignedHeaders=(?<headers>[\\w;-]+), Signature=[a-z0-9]{64}$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern authorizationHeaderLooseRegex = Pattern.compile("^Authorization:\\s+AWS4-HMAC-SHA256\\s+Credential=(?<accessKeyId>[\\w-]{0,128})/(?<date>[\\w-]{0,8})/(?<region>[\\w-]{0,64})/(?<service>[\\w-]{0,64})/aws4_request,\\s+SignedHeaders=(?<headers>[\\w;-]+),\\s+Signature=[\\w-]{0,64}$", Pattern.CASE_INSENSITIVE);
+
+    // Regex for extracting usable signature fields and for just identifying a request as SigV4 (loose)
+    private static final Pattern authorizationHeaderRegex = Pattern.compile("^Authorization:[ ]{1,20}AWS4-HMAC-SHA256[ ]{1,20}Credential=(?<accessKeyId>[\\w]{16,128})/(?<date>[0-9]{8})/(?<region>[a-z0-9-]{5,64})/(?<service>[a-z0-9-]{1,64})/aws4_request,[ ]{1,20}SignedHeaders=(?<headers>[\\w;-]+),[ ]{1,20}Signature=(?<signature>[a-z0-9]{64})$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern authorizationHeaderLooseRegex = Pattern.compile("^Authorization:[ ]{1,20}AWS4-HMAC-SHA256[ ]{1,20}Credential=(?<accessKeyId>[\\w-]{0,128})/(?<date>[\\w-]{0,8})/(?<region>[\\w-]{0,64})/(?<service>[\\w-]{0,64})/aws4_request,[ ]{1,20}SignedHeaders=(?<headers>[\\w;-]+),[ ]{1,20}Signature=(?<signature>[\\w-]{0,64})$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern authorizationHeaderLooseNoCaptureRegex = Pattern.compile("^Authorization:[ ]{1,20}AWS4-HMAC-SHA256[ ]{1,20}Credential=[\\w-]{0,128}/[\\w-]{0,8}/[\\w-]{0,64}/[\\w-]{0,64}/aws4_request,[ ]{1,20}SignedHeaders=[\\w;-]+,[ ]{1,20}Signature=[\\w-]{0,64}$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern xAmzCredentialRegex = Pattern.compile("^(?<accessKeyId>[\\w]{16,128})/(?<date>[0-9]{8})/(?<region>[a-z0-9-]{5,64})/(?<service>[a-z0-9-]{1,64})/aws4_request$", Pattern.CASE_INSENSITIVE);
+
+    // define headers for internal use
+    public static final String HEADER_PREFIX = "X-BurpSigV4-";
+    public static final String PROFILE_HEADER_NAME = HEADER_PREFIX + "Profile"; // used to specify a named profile to sign the request with
+    public static final String SKIP_SIGNING_HEADER = HEADER_PREFIX + "Skip: DO NOT SIGN"; // do not sign any requests that contain this header
 
     protected IExtensionHelpers helpers;
     protected IBurpExtenderCallbacks callbacks;
@@ -77,6 +94,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private HashMap<String, SigProfile> profileNameMap; // map name to profile
     protected LogWriter logger = LogWriter.getLogger();
     private boolean preserveHeaderOrder = true; // preserve order of headers after signing
+    private long presignedUrlLifetimeSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
 
     private JLabel statusLabel;
     private JCheckBox signingEnabledCheckBox;
@@ -159,9 +177,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             dialog.add(mainPanel);
             dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
             // set dialog location and size
-            final Point burpLocation = SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()).getLocation();
+            final Point burpLocation = SwingUtilities.getWindowAncestor(getUiComponent()).getLocation();
             dialog.setLocation(burpLocation);
-            dialog.setPreferredSize(SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()).getBounds().getSize());
+            dialog.setPreferredSize(SwingUtilities.getWindowAncestor(getUiComponent()).getBounds().getSize());
             dialog.pack();
             dialog.setVisible(true);
         });
@@ -191,12 +209,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             dialog.add(mainPanel);
             dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
             // place dialog in upper left of burp window
-            final Point burpLocation = SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()).getLocation();
+            final Point burpLocation = SwingUtilities.getWindowAncestor(getUiComponent()).getLocation();
             dialog.setLocation(burpLocation);
-            // make sure dialog height doesn't exceed burp window height
-            final int height = SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()).getBounds().getSize().height;
+            // make sure dialog height and width do not exceed burp window height and width
+            final int height = SwingUtilities.getWindowAncestor(getUiComponent()).getBounds().getSize().height;
+            final int width = SwingUtilities.getWindowAncestor(getUiComponent()).getBounds().getSize().width;
             dialog.pack();
-            dialog.setSize(dialog.getSize().width, height);
+            dialog.setSize(Integer.min(width, dialog.getSize().width), height);
             dialog.setVisible(true);
         });
         otherSettingsPanel.add(new JLabel("Settings Json"));
@@ -409,21 +428,31 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 if (rowIndeces.length == 1) {
                     final String name = (String) model.getValueAt(rowIndeces[0], 0);
                     SigProfile profile = profileNameMap.get(name);
-                    StsClient stsClient = StsClient.builder()
-                            .region(Region.US_EAST_1)
-                            .credentialsProvider(() -> {
-                                final SigCredential cred = profile.getCredential();
-                                return AwsBasicCredentials.create(cred.getAccessKeyId(), cred.getSecretKey());
-                            })
-                            .build();
 
-                    try {
-                        GetCallerIdentityResponse response = stsClient.getCallerIdentity();
-                        JDialog dialog = new SigProfileTestDialog(null, profile, false, response);
-                        dialog.setVisible(true);
-                    } catch (StsException exc) {
-                        JOptionPane.showMessageDialog(getUiComponent(), exc.getMessage());
-                    }
+                    // don't block the UI thread
+                    (new Thread(() -> {
+                        try {
+                            StsClient stsClient = StsClient.builder()
+                                    .httpClient(new SdkHttpClientForBurp())
+                                    .region(Region.US_EAST_1)
+                                    .credentialsProvider(() -> {
+                                        final SigCredential cred = profile.getCredential();
+                                        if (cred.isTemporary()) {
+                                            return AwsSessionCredentials.create(cred.getAccessKeyId(), cred.getSecretKey(), ((SigTemporaryCredential)cred).getSessionToken());
+                                        }
+                                        return AwsBasicCredentials.create(cred.getAccessKeyId(), cred.getSecretKey());
+                                    })
+                                    .build();
+                            GetCallerIdentityResponse response = stsClient.getCallerIdentity();
+                            JDialog dialog = new SigProfileTestDialog(null, profile, false, response);
+                            dialog.setVisible(true);
+                        } catch (SigCredentialProviderException | StsException exc) {
+                            JOptionPane.showMessageDialog(getUiComponent(),
+                                    formatMessageHtml(exc.getMessage()),
+                                    "Test Failed: "+profile.getName(),
+                                    JOptionPane.ERROR_MESSAGE);
+                        }
+                    })).start();
                 }
                 else {
                     updateStatus("Select a single profile to test");
@@ -460,7 +489,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     }
                     int exportCount = SigProfile.exportToFilePath(sigProfiles, exportPath);
                     final String msg = String.format("Exported %d profiles to %s", exportCount, exportPath);
-                    JOptionPane.showMessageDialog(getUiComponent(), msg);
+                    JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml(msg));
                     logger.info(msg);
                 }
             }
@@ -555,6 +584,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
     }
 
+    // format a message for display in a dialog. applies reasonable word-wrapping.
+    public static String formatMessageHtml(final String msg) {
+        return "<html><p style='width: 300px;'>" +
+                StringEscapeUtils.escapeHtml4(msg) +
+                "</p></html>";
+    }
+
     @Override
     public void registerExtenderCallbacks(IBurpExtenderCallbacks callbacks)
     {
@@ -631,6 +667,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         settings.put(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, getAdditionalSignedHeadersFromUI());
         settings.put(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected());
         settings.put(SETTING_PRESERVE_HEADER_ORDER, this.preserveHeaderOrder);
+        settings.put(SETTING_PRESIGNED_URL_LIFETIME, this.presignedUrlLifetimeSeconds);
         if (this.persistProfilesCheckBox.isSelected()) {
             settings.put(SETTING_PROFILES, this.profileNameMap);
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
@@ -717,6 +754,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         if (settings.has(SETTING_PRESERVE_HEADER_ORDER))
             this.preserveHeaderOrder = settings.get(SETTING_PRESERVE_HEADER_ORDER).getAsBoolean();
+
+        this.presignedUrlLifetimeSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
+        if (settings.has(SETTING_PRESIGNED_URL_LIFETIME)) {
+            final long lifetime = settings.get(SETTING_PRESIGNED_URL_LIFETIME).getAsLong();
+            if (lifetime >= PRESIGNED_URL_LIFETIME_MIN_SECONDS && lifetime <= PRESIGNED_URL_LIFETIME_MAX_SECONDS) {
+                this.presignedUrlLifetimeSeconds = lifetime;
+            }
+        }
     }
 
     private void saveExtensionSettings()
@@ -791,6 +836,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         List<String> profileList = getSortedProfileNames();
         profileList.add(0, NO_DEFAULT_PROFILE); // no default option
 
+        // add all profile names to menu, along with a listener to set the default profile when selected
         for (final String name : profileList) {
             item = new JRadioButtonMenuItem(name, isSigningEnabled() && name.equals(getDefaultProfileName()));
             item.addActionListener(new ActionListener()
@@ -806,11 +852,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             menu.add(item);
         }
 
-        ArrayList<JMenuItem> list = new ArrayList<>();
+        List<JMenuItem> list = new ArrayList<>();
         list.add(menu);
 
-        // add menu item to copy signed url to clipboard. this menu option is only available for GET requests.
-        // TODO: add subitems to get signed url with any profile?
+        // add context menu items
         switch (invocation.getInvocationContext()) {
             case IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST:
             case IContextMenuInvocation.CONTEXT_MESSAGE_VIEWER_REQUEST:
@@ -818,16 +863,19 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 IHttpRequestResponse[] messages = invocation.getSelectedMessages();
                 IRequestInfo requestInfo = helpers.analyzeRequest(messages[0]);
 
-                // get signature properties from authorization header. this will return empty strings if validation fails.
-                List <String> authorizationHeaders = requestInfo.getHeaders().stream()
-                        .filter(h -> StringUtils.startsWithIgnoreCase(h, "Authorization:")).collect(Collectors.toList());
-                Map<String, String> authorizationMap = parseSigV4AuthorizationHeader(
-                        (authorizationHeaders.size() > 0) ? authorizationHeaders.get(0) : "", false);
-                // assume sigv4 if any values were successfully parsed from the authorization header
-                final boolean isSigV4 = authorizationMap.values().stream().anyMatch(v -> v.length() > 0);
+                final List<String> authorizationHeaders = requestInfo.getHeaders().stream()
+                        .filter(h -> StringUtils.startsWithIgnoreCase(h, "Authorization:"))
+                        .collect(Collectors.toList());
+                Map<String, String> signature = authorizationHeaders.stream()
+                        .map(h -> parseSigV4AuthorizationHeader(h, false))
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null);
 
-                //TODO presigned URLs are not limited to s3/GET
-                if ((messages.length > 0) && StringUtils.equalsIgnoreCase(requestInfo.getMethod(), "GET") && StringUtils.equalsIgnoreCase(authorizationMap.get("service"), "s3")) {
+                // Add menu item for presigned s3 URLs for GET and PUT
+                // XXX: add subitems to get signed url with any profile?
+                if ((signature != null) && StringUtils.equalsIgnoreCase(signature.get("service"), "s3") &&
+                        Arrays.asList("GET", "PUT").contains(requestInfo.getMethod().toUpperCase())) {
                     JMenuItem signedUrlItem = new JMenuItem("Copy Signed URL");
                     signedUrlItem.addActionListener(new ActionListener()
                     {
@@ -837,12 +885,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             final SigProfile profile = getSigningProfile(requestInfo.getHeaders());
                             String signedUrl = ""; // clear clipboard on error
                             if (profile == null) {
-                                // XXX consider notifying user of error
-                                logger.error("Failed to determine signing profile");
+                                final String msg = "Failed to determine signing profile for presigned URL";
+                                logger.error(msg);
+                                JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml(msg));
                             }
                             else {
-                                // sign a url valid for ? seconds. XXX consider making this configurable.
-                                signedUrl = presignRequest(messages[0].getHttpService(), messages[0].getRequest(), profile).toString();
+                                signedUrl = presignRequest(messages[0].getHttpService(), messages[0].getRequest(), profile, BurpExtender.this.presignedUrlLifetimeSeconds).toString();
                             }
                             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                             clipboard.setContents(new StringSelection(signedUrl), null);
@@ -850,10 +898,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     });
                     list.add(signedUrlItem);
                 }
-                if ((messages.length > 0) && (invocation.getInvocationContext() == IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST) && !isSigV4) {
+                if ((signature == null) && (invocation.getInvocationContext() == IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST)) {
                     JMenu addSignatureMenu = new JMenu("Add Signature");
                     for (final String name : profileList) {
-                        if (name.length() == 0) continue;
+                        if (name.length() == 0 || name.equals(NO_DEFAULT_PROFILE)) continue;
                         JMenuItem sigItem = new JMenuItem(name);
                         sigItem.setActionCommand(name);
                         sigItem.addActionListener(new ActionListener()
@@ -864,11 +912,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 final String profileName = actionEvent.getActionCommand();
                                 SigProfile profile = profileNameMap.get(profileName);
                                 if (profile == null) {
-                                    // XXX maybe use an "Add Profile" dialog here?
-                                    logger.error("Profile name does not exist: "+profileName);
+                                    // this should never happen since the menu is populated with existing profile names
+                                    JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml("Profile name does not exist: "+profileName));
                                     return;
                                 }
-                                // if region or service is missing, prompt user. do not re-prompt if values are left blank
+                                // if region or service is missing from profile, prompt user
                                 if (StringUtils.isEmpty(profile.getService()) || StringUtils.isEmpty(profile.getRegion())) {
                                     SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(null, "Add Signature", true, profile);
                                     callbacks.customizeUiComponent(dialog);
@@ -887,78 +935,102 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                     }
                                     profile = dialog.getProfile();
                                 }
-                                try {
-                                    messages[0].setRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), profile));
-                                } catch (IllegalArgumentException exc) {
-                                    logger.error("Failed to add signature: "+exc.getMessage());
-                                }
+
+                                final SigProfile profileCopy = profile; // reference copy is fine here
+                                (new Thread(() -> {
+                                    try {
+                                        // XXX we do some work to prevent custom signed headers specified in the SigV4 UI from
+                                        // showing up in the Raw message editor tab to prevent them from being duplicated when
+                                        // it's signed again. consider modifying signRequest() to optionally skip adding these.
+                                        IRequestInfo signedRequestInfo = helpers.analyzeRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), profileCopy));
+
+                                        // make sure new signature contains a keyId that can be used to automatically select the correct profile
+                                        Map<String, String> signature = parseSigV4AuthorizationHeader(signedRequestInfo.getHeaders().stream()
+                                                .filter(h -> StringUtils.startsWithIgnoreCase(h, "Authorization:"))
+                                                .findFirst().orElse(null), true);
+                                        final String accessKeyId = profileCopy.getAccessKeyIdForProfileSelection();
+                                        if (accessKeyId != null) {
+                                            signature.put("accessKeyId", accessKeyId);
+                                        }
+
+                                        // get original headers minus AWS headers
+                                        List<String> allHeaders = requestInfo.getHeaders().stream()
+                                                .filter(h -> !StringUtils.startsWithIgnoreCase(h, "Authorization:"))
+                                                .filter(h -> !StringUtils.startsWithIgnoreCase(h, "X-Amz-"))
+                                                .collect(Collectors.toList());
+
+                                        // add the headers created by signing followed by the modified Authorization header
+                                        allHeaders.addAll(signedRequestInfo.getHeaders().stream()
+                                                .filter(h -> StringUtils.startsWithIgnoreCase(h, "X-Amz-"))
+                                                .collect(Collectors.toList()));
+                                        allHeaders.add(buildSigV4AuthorizationHeader(signature));
+                                        final byte[] body = Arrays.copyOfRange(messages[0].getRequest(), requestInfo.getBodyOffset(), messages[0].getRequest().length);
+                                        messages[0].setRequest(helpers.buildHttpMessage(allHeaders, body));
+                                    } catch (IllegalArgumentException | NullPointerException exc) {
+                                        JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml("Failed to add signature: " + exc.getMessage()));
+                                    }
+                                })).start();
                             }
                         });
                         addSignatureMenu.add(sigItem);
                     }
                     list.add(addSignatureMenu);
                 }
-                else if ((messages.length > 0) && (invocation.getInvocationContext() == IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST) && isSigV4) {
+                else if ((signature != null) && (invocation.getInvocationContext() == IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST)) {
                     JMenuItem editSignatureItem = new JMenuItem("Edit Signature");
                     editSignatureItem.addActionListener(new ActionListener()
                     {
                         @Override
                         public void actionPerformed(ActionEvent actionEvent)
                         {
-                            IRequestInfo requestInfo = helpers.analyzeRequest(messages[0]);
-                            SigProfile signingProfile = null;
-                            final List<String> authorizationHeaders = requestInfo.getHeaders().stream()
-                                    .filter(h -> StringUtils.startsWithIgnoreCase(h, "Authorization:"))
-                                    .collect(Collectors.toList());
-                            for (final String value : authorizationHeaders) {
-                                Matcher matcher = authorizationHeaderRegex.matcher(value);
-                                if (matcher.matches()) {
-                                    SigProfile tempProfile = profileKeyIdMap.get(matcher.group("accessKeyId"));
-                                    if (tempProfile != null) {
-                                        SigProfile.Builder builder = new SigProfile.Builder(tempProfile);
-                                        if (StringUtils.isNotEmpty(matcher.group("service"))) {
-                                            builder.withService(matcher.group("service"));
-                                        }
-                                        if (StringUtils.isNotEmpty(matcher.group("region"))) {
-                                            builder.withRegion(matcher.group("region"));
-                                        }
-                                        signingProfile = builder.build();
-                                        break;
-                                    }
-                                }
-                            }
+                            SigProfile signingProfile = authorizationHeaders.stream()
+                                    .map(BurpExtender.this::profileFromAuthorizationHeader)
+                                    .filter(Objects::nonNull)
+                                    .findFirst()
+                                    .orElse(null);
+
                             if (signingProfile == null) {
-                                // request is likely invalid SigV4 format
-                                SigProfileEditorDialog dialog = new SigProfileEditorDialog(null, "Add Profile", true, null);
-                                List<Map<String, String>> signatures = authorizationHeaders.stream()
-                                        .map(h -> parseSigV4AuthorizationHeader(h, false))
-                                        .filter(Objects::nonNull)
-                                        .collect(Collectors.toList());
-                                if (signatures.size() > 0) {
-                                    dialog.profileKeyIdTextField.setText(signatures.get(0).get("accessKeyId"));
-                                    dialog.serviceTextField.setText(signatures.get(0).get("service"));
-                                    dialog.regionTextField.setText(signatures.get(0).get("region"));
-                                }
+                                // unrecognized keyId in signature
+                                SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(null, "Edit Signature", true,
+                                        new SigProfile.Builder("TEMP").build());
+                                // populate Add Profile dialog with some defaults taken from the Authorization header
+                                dialog.nameTextField.setText(" ");
+                                dialog.profileKeyIdTextField.setText(signature.get("accessKeyId"));
+                                dialog.serviceTextField.setText(signature.get("service"));
+                                dialog.regionTextField.setText(signature.get("region"));
+                                dialog.disableForEdit();
                                 dialog.setVisible(true);
-                                final String newProfileName = dialog.getNewProfileName();
-                                if (newProfileName != null) {
-                                    final SigProfile newProfile = profileNameMap.get(newProfileName);
-                                    if (newProfile != null) {
-                                        messages[0].setRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), newProfile));
-                                    } // else... XXX maybe display an error dialog here
-                                }
+                                signingProfile = dialog.getProfile();
                             }
                             else {
                                 SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(null, "Edit Signature", true, signingProfile);
                                 callbacks.customizeUiComponent(dialog);
-                                // disable profile name and secret since they will have to be changed in the top-level plugin tab.
+                                // disable profile name and keyId since they should be changed in the top-level plugin tab.
                                 // XXX would be nice to have a combobox for the profile here instead of disabling.
                                 dialog.disableForEdit();
+                                dialog.serviceTextField.setText(signature.getOrDefault("service", signingProfile.getService()));
+                                dialog.regionTextField.setText(signature.getOrDefault("region", signingProfile.getRegion()));
                                 dialog.setVisible(true);
-                                if (dialog.getProfile() != null) {
-                                    // if region or service are cleared in the dialog, they will not be applied here. must edit request manually instead.
-                                    messages[0].setRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), dialog.getProfile()));
-                                }
+                                signingProfile = dialog.getProfile();
+                            }
+
+                            if (signingProfile != null) {
+                                // preserve header order by getting index of first Authorization header
+                                final List<String> allHeaders = requestInfo.getHeaders();
+                                final int insertIndex = IntStream.range(0, allHeaders.size())
+                                        .filter(i -> StringUtils.startsWithIgnoreCase(allHeaders.get(i), "Authorization:"))
+                                        .findFirst()
+                                        .orElse(1);
+
+                                List<String> nonAuthHeaders = requestInfo.getHeaders().stream()
+                                        .filter(h -> !StringUtils.startsWithIgnoreCase(h, "Authorization:"))
+                                        .collect(Collectors.toList());
+                                final byte[] body = Arrays.copyOfRange(messages[0].getRequest(), requestInfo.getBodyOffset(), messages[0].getRequest().length);
+                                signature.put("accessKeyId", signature.getOrDefault("accessKeyId", signingProfile.getAccessKeyId()));
+                                signature.put("region", signingProfile.getRegion());
+                                signature.put("service", signingProfile.getService());
+                                nonAuthHeaders.add(insertIndex, buildSigV4AuthorizationHeader(signature));
+                                messages[0].setRequest(helpers.buildHttpMessage(nonAuthHeaders, body));
                             }
                         }
                     });
@@ -968,33 +1040,43 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return list;
     }
 
-    private Map<String, String> parseSigV4AuthorizationHeader(final String header, final boolean validate)
+    // check Authorization header for AccessKeyId and return matching profile or null.
+    private SigProfile profileFromAuthorizationHeader(final String header) {
+        return Stream.of(header)
+                .map(h -> parseSigV4AuthorizationHeader(h, false))
+                .filter(Objects::nonNull)
+                .filter(a -> this.profileKeyIdMap.containsKey(a.get("accessKeyId")))
+                .map(a -> this.profileKeyIdMap.get(a.get("accessKeyId")))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static Map<String, String> parseSigV4AuthorizationHeader(final String header, final boolean strict)
     {
-        Map<String, String> auth = null;
+        Map<String, String> signature = null;
         Pattern pattern = authorizationHeaderLooseRegex;
-        if (validate) {
+        if (strict) {
             pattern = authorizationHeaderRegex;
         }
         Matcher matcher = pattern.matcher(header);
         if (matcher.matches()) {
-            auth = Map.of(
+            signature = new HashMap<>(Map.of(
                     "accessKeyId", matcher.group("accessKeyId"),
                     "date", matcher.group("date"),
                     "region", matcher.group("region"),
                     "service", matcher.group("service"),
-                    "headers", matcher.group("headers")
-            );
+                    "headers", matcher.group("headers"),
+                    "signature", matcher.group("signature")
+            ));
         }
-        else if (!validate) {
-            auth = Map.of(
-                    "accessKeyId", "",
-                    "date", "",
-                    "region", "",
-                    "service", "",
-                    "headers", ""
-            );
-        }
-        return auth;
+        return signature;
+    }
+
+    private static String buildSigV4AuthorizationHeader(final Map<String, String> signature) {
+        return String.format(
+                "Authorization: AWS4-HMAC-SHA256 Credential=%s/%s/%s/%s/aws4_request, SignedHeaders=%s, Signature=%s",
+                signature.get("accessKeyId"), signature.get("date"), signature.get("region"), signature.get("service"),
+                signature.get("headers"), signature.get("signature"));
     }
 
     // display status message in UI
@@ -1115,12 +1197,17 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     /*
     Check if the request is signed with SigV4. Not a strict check.
     This routine needs to be fast since potentially ALL requests will cause an invocation.
-    https://docs.aws.amazon.com/general/latest/gr/sigv4-date-handling.html
     */
-    public static boolean isAws4Request(IRequestInfo request)
+    public static boolean isAws4Request(final IRequestInfo request)
     {
-        return request.getHeaders().stream().anyMatch(h -> StringUtils.startsWithIgnoreCase(h, "Authorization: AWS4-HMAC-SHA256")) ||
-                request.getParameters().stream().anyMatch(p -> StringUtils.equalsIgnoreCase(p.getName(), "X-Amz-Credential"));
+        if (request.getHeaders().stream().anyMatch(h -> h.equalsIgnoreCase(SKIP_SIGNING_HEADER))) {
+            return false;
+        }
+        return request.getHeaders().stream().anyMatch(h -> authorizationHeaderLooseNoCaptureRegex.matcher(h).matches());
+    }
+
+    public static boolean isAws4PreSignedRequest(final IRequestInfo request) {
+        return request.getParameters().stream().filter(p -> p.getType() == IParameter.PARAM_URL).anyMatch(p -> StringUtils.equalsIgnoreCase(p.getName(), "X-Amz-Credential"));
     }
 
     private String getDefaultProfileName()
@@ -1202,27 +1289,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .orElse(this.profileNameMap.get(getDefaultProfileName()));
 
         if (signingProfile == null) {
-            // if still cannot determine profile, find matching accessKeyId
-            final List<String> authorizationHeaders = headers.stream()
-                    .filter(h -> StringUtils.startsWithIgnoreCase(h, "Authorization:"))
-                    .collect(Collectors.toList());
-            for (final String value : authorizationHeaders) {
-                Matcher matcher = authorizationHeaderRegex.matcher(value);
-                if (matcher.matches()) {
-                    if (this.profileKeyIdMap.containsKey(matcher.group("accessKeyId"))) {
-                        signingProfile = this.profileKeyIdMap.get(matcher.group("accessKeyId"));
-                        SigProfile.Builder builder = new SigProfile.Builder(signingProfile);
-                        if (StringUtils.isEmpty(signingProfile.getService())) {
-                            builder.withService(matcher.group("service"));
-                        }
-                        if (StringUtils.isEmpty(signingProfile.getRegion())) {
-                            builder.withRegion(matcher.group("region"));
-                        }
-                        signingProfile = builder.build();
-                        break;
-                    }
-                }
-            }
+            signingProfile = headers.stream()
+                    .map(this::profileFromAuthorizationHeader)
+                    .filter(Objects::nonNull)
+                    .findFirst()
+                    .orElse(null);
         }
 
         return signingProfile;
@@ -1232,7 +1303,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
      Always returns an array of size 2 even if value is empty string.
      Name and value are trimmed of whitespace.
      */
-    private String[] splitHeader(final String header)
+    public static String[] splitHeader(final String header)
     {
         List<String> tokens = Arrays.stream(header.split(":", 2))
                 .map(String::trim)
@@ -1245,8 +1316,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private boolean shouldDoubleUrlEncodeForService(final String service)
     {
-        //TODO track which services require double-encoding
-        return false;
+        // ref: https://sdk.amazonaws.com/java/api/latest/software/amazon/awssdk/auth/signer/params/Aws4SignerParams.Builder.html#doubleUrlEncode-java.lang.Boolean-
+        return !service.equalsIgnoreCase("s3");
     }
 
     public byte[] signRequest(final IHttpService httpService, final byte[] originalRequestBytes, final SigProfile signingProfile)
@@ -1256,21 +1327,19 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         String region = "";
         String service = "";
         Set<String> signedHeaderSet = getAdditionalSignedHeadersFromUI().stream().map(String::toLowerCase).collect(Collectors.toSet());
-        signedHeaderSet.add("host"); // always require host header
+        signedHeaderSet.add("host"); // always require host header. aws sdk should already handle this.
 
         for (final String header : request.getHeaders()) {
-            if (StringUtils.startsWithIgnoreCase(header, "Authorization:")) {
-                Matcher matcher = authorizationHeaderRegex.matcher(header);
-                if (matcher.matches()) {
-                    //accessKeyId = matcher.group("accessKeyId");
-                    region = matcher.group("region");
-                    service = matcher.group("service");
-                    // get headers to sign
-                    Arrays.stream(matcher.group("headers").split(";"))
-                            .map(String::toLowerCase)
-                            .forEach(signedHeaderSet::add);
-                    break;
-                }
+            Matcher matcher = authorizationHeaderRegex.matcher(header);
+            if (matcher.matches()) {
+                //accessKeyId = matcher.group("accessKeyId");
+                region = matcher.group("region");
+                service = matcher.group("service");
+                // get headers to sign
+                Arrays.stream(matcher.group("headers").split(";"))
+                        .map(String::toLowerCase)
+                        .forEach(signedHeaderSet::add);
+                break;
             }
         }
 
@@ -1290,7 +1359,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             final String name = tokens[0];
             final String value = tokens[1];
             // check for request header that specifies profile name to use and leave out of final request
-            if (StringUtils.equalsIgnoreCase(name, PROFILE_HEADER_NAME)) {
+            if (StringUtils.startsWithIgnoreCase(name, HEADER_PREFIX)) {
                 continue;
             }
             if (signedHeaderSet.contains(name.toLowerCase()) || StringUtils.startsWithIgnoreCase(name, "X-Amz-")) {
@@ -1299,7 +1368,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 }
                 signedHeaderMap.get(name).add(value);
             }
-            else if (!StringUtils.startsWithIgnoreCase(name, "Authorization")) {
+            else if (!StringUtils.equalsIgnoreCase(name, "Authorization")) {
                 if (!unsignedHeaderMap.containsKey(name)) {
                     unsignedHeaderMap.put(name, new ArrayList<String>());
                 }
@@ -1316,8 +1385,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             signedHeaderMap.get(name).add(value);
         }
 
-        //TODO error check
-        final SigCredential credential = signingProfile.getCredential();
+        SigCredential credential;
+        try {
+            credential = signingProfile.getCredential();
+        } catch (SigCredentialProviderException exc) {
+            logger.error("During request signing: "+exc.getMessage());
+            return null;
+        }
         AwsCredentials awsCredentials;
         if (credential.isTemporary()) {
             awsCredentials = AwsSessionCredentials.create(credential.getAccessKeyId(), credential.getSecretKey(), ((SigTemporaryCredential) credential).getSessionToken());
@@ -1364,7 +1438,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .contentStreamProvider(() -> new ByteArrayInputStream(body));
         // add query string params as these are not captured by builder uri
         request.getParameters().forEach(p -> {
-            awsRequestBuilder.appendRawQueryParameter(helpers.urlDecode(p.getName()), helpers.urlDecode(p.getValue()));
+            if (p.getType() == IParameter.PARAM_URL) {
+                awsRequestBuilder.appendRawQueryParameter(helpers.urlDecode(p.getName()), helpers.urlDecode(p.getValue()));
+            }
         });
 
         final SdkHttpFullRequest awsRequest = awsRequestBuilder.build();
@@ -1384,7 +1460,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         else {
             Aws4SignerParams signerParams = Aws4SignerParams.builder()
                     .awsCredentials(awsCredentials)
-                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service)) // service dependent
+                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
                     .signingRegion(Region.of(region))
                     .signingName(service)
                     .build();
@@ -1404,6 +1480,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         }
 
+        // only useful when populating the message editor tab for readability
         if (preserveHeaderOrder) {
             Map<String, Integer> headerOrderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             int i = 0;
@@ -1423,11 +1500,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return requestBytes;
     }
 
-    public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final SigProfile signingProfile)
-    {
-        return presignRequest(httpService, originalRequestBytes, signingProfile, PRESIGN_DURATION_SECONDS);
-    }
-
     public URL presignRequest(final IHttpService httpService, final byte[] originalRequestBytes, final SigProfile signingProfile, final long durationSeconds)
     {
 
@@ -1436,8 +1508,21 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         String region = "";
         String service = "";
 
-        for (final String header : request.getHeaders()) {
-            if (StringUtils.startsWithIgnoreCase(header, "Authorization:")) {
+        for (final IParameter parameter : request.getParameters()) {
+            if (parameter.getType() == IParameter.PARAM_URL) {
+                if (parameter.getName().equalsIgnoreCase("X-Amz-Credential")) {
+                    Matcher matcher = xAmzCredentialRegex.matcher(helpers.urlDecode(parameter.getValue()));
+                    if (matcher.matches()) {
+                        region = matcher.group("region");
+                        service = matcher.group("service");
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (region.equals("") || service.equals("")) {
+            for (final String header : request.getHeaders()) {
                 Matcher matcher = authorizationHeaderRegex.matcher(header);
                 if (matcher.matches()) {
                     region = matcher.group("region");
@@ -1447,8 +1532,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         }
 
-        //TODO error check
-        final SigCredential credential = signingProfile.getCredential();
+        SigCredential credential;
+        try {
+            credential = signingProfile.getCredential();
+        } catch (SigCredentialProviderException exc) {
+            logger.error("During request signing: "+exc.getMessage());
+            return null;
+        }
+
         AwsCredentials awsCredentials;
         if (credential.isTemporary()) {
             awsCredentials = AwsSessionCredentials.create(credential.getAccessKeyId(), credential.getSecretKey(), ((SigTemporaryCredential) credential).getSessionToken());
@@ -1483,31 +1574,24 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         // sign the request. can throw IllegalArgumentException
         SdkHttpFullRequest signedRequest;
+        Aws4PresignerParams signerParams = Aws4PresignerParams.builder()
+                .awsCredentials(awsCredentials)
+                .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
+                .signingRegion(Region.of(region))
+                .signingName(service)
+                .expirationTime(Instant.now().plusSeconds(durationSeconds))
+                .build();
         if (StringUtils.equalsIgnoreCase(service, "s3")) {
-            Aws4PresignerParams signerParams = Aws4PresignerParams.builder()
-                    .awsCredentials(awsCredentials)
-                    .signingRegion(Region.of(region))
-                    .signingName(service)
-                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
-                    .expirationTime(Instant.now().plusSeconds(durationSeconds))
-                    .build();
             signedRequest = AwsS3V4Signer.create().presign(awsRequest, signerParams);
         }
         else {
-            Aws4PresignerParams signerParams = Aws4PresignerParams.builder()
-                    .awsCredentials(awsCredentials)
-                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
-                    .signingRegion(Region.of(region))
-                    .signingName(service)
-                    .expirationTime(Instant.now().plusSeconds(durationSeconds))
-                    .build();
             signedRequest = Aws4Signer.create().presign(awsRequest, signerParams);
         }
 
         try {
             return signedRequest.getUri().toURL();
         } catch (MalformedURLException exc) {
-            logger.error("Invalid pre-signed URL: "+signedRequest.getUri().toASCIIString());
+            logger.error("Invalid presigned URL: "+signedRequest.getUri().toASCIIString());
         }
         return null;
     }
@@ -1515,8 +1599,27 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public void processHttpMessage(int toolFlag, boolean messageIsRequest, IHttpRequestResponse messageInfo)
     {
+        IRequestInfo request = null;
+
+        // Strip any headers used internally by the extension. When using the aws sdk, our http client adds a header
+        // to communicate to the extension that the request should be ignored. For example, when using the "Test"
+        // button, we send a request to sts:GetCallerIdentity and it is important that the original signature is not modified.
+        if (messageIsRequest && toolFlag == IBurpExtenderCallbacks.TOOL_EXTENDER) {
+            request = helpers.analyzeRequest(messageInfo);
+            if (request.getHeaders().stream().anyMatch(h -> StringUtils.equalsIgnoreCase(h, SKIP_SIGNING_HEADER))) {
+                // Found skip header
+                messageInfo.setRequest(helpers.buildHttpMessage(
+                        request.getHeaders().stream().filter(h -> !StringUtils.startsWithIgnoreCase(h, HEADER_PREFIX)).collect(Collectors.toList()),
+                        Arrays.copyOfRange(messageInfo.getRequest(), request.getBodyOffset(), messageInfo.getRequest().length)
+                ));
+                return;
+            }
+        }
+
         if (messageIsRequest && signingEnabledCheckBox.isSelected()) {
-            IRequestInfo request = helpers.analyzeRequest(messageInfo);
+            if (request == null) {
+                request = helpers.analyzeRequest(messageInfo);
+            }
 
             // check request scope
             if (this.inScopeOnlyCheckBox.isSelected() && !this.callbacks.isInScope(request.getUrl())) {
@@ -1537,8 +1640,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     messageInfo.setRequest(requestBytes);
                     messageInfo.setComment(DISPLAY_NAME+" "+signingProfile.getName());
                 }
+                else {
+                    callbacks.issueAlert(String.format("Failed to sign with profile \"%s\". See Extender log for details.", signingProfile.getName()));
+                }
             }
         }
     }
 
 }
+

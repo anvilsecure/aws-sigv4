@@ -1,6 +1,6 @@
 package burp.error;
 
-public class SigCredentialProviderException extends Exception {
+public class SigCredentialProviderException extends RuntimeException {
     public SigCredentialProviderException(String msg)
     {
         super(msg);

@@ -5,9 +5,10 @@ SigV4 uses a timestamp to give signatures a lifetime of 15 minutes. When using t
 
 ## Features
 - Credentials can be imported from a file or environment variables.
-- Profiles are automatically selected based on the key id in the request.
+- Automatically select a profile based on the key id in the request.
 - Resend requests with different credentials.
-- Supports signatures in query string parameters or headers (GET and POST).
+- Context menu item for copying s3 presigned URLs.
+- Assume a role by providing a role ARN and optional external ID
 
 
 ## Build Instructions
@@ -92,7 +93,8 @@ or
 ```
 
 Permanent credentials (no "SessionToken") will be fetched every time they are used. Temporary credentials
-will only be fetched when they are nearing expiration. Expiration should be specified in epoch seconds.
+will only be fetched when they are nearing expiration. Expiration should be specified in epoch seconds or
+as an ISO 8601 timestamp.
 
 ### Environment
 https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
