@@ -38,6 +38,8 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.List;
 import java.util.*;
@@ -66,6 +68,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private static final String SETTING_IN_SCOPE_ONLY = "InScopeOnly";
     private static final String SETTING_PRESERVE_HEADER_ORDER = "PreserveHeaderOrder";
     private static final String SETTING_PRESIGNED_URL_LIFETIME = "PresignedUrlLifetimeInSeconds";
+    private static final String SETTING_CONTENT_MD5_BEHAVIOR = "ContentMD5HeaderBehavior";
 
     public static final String EXTENSION_NAME = "SigV4"; // Name in extender menu
     public static final String DISPLAY_NAME = "SigV4"; // name for tabs, menu, and other UI components
@@ -93,8 +96,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private HashMap<String, SigProfile> profileKeyIdMap; // map accessKeyId to profile
     private HashMap<String, SigProfile> profileNameMap; // map name to profile
     protected LogWriter logger = LogWriter.getLogger();
+
+    // Persistent settings
     private boolean preserveHeaderOrder = true; // preserve order of headers after signing
     private long presignedUrlLifetimeSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
+    private static final String CONTENT_MD5_UPDATE = "update"; // recompute a valid md5
+    private static final String CONTENT_MD5_REMOVE = "remove"; // remove the header
+    private static final String CONTENT_MD5_IGNORE = "ignore"; // do nothing
+    private String contentMd5HeaderBehavior = CONTENT_MD5_IGNORE;
 
     private JLabel statusLabel;
     private JCheckBox signingEnabledCheckBox;
@@ -668,6 +677,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         settings.put(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected());
         settings.put(SETTING_PRESERVE_HEADER_ORDER, this.preserveHeaderOrder);
         settings.put(SETTING_PRESIGNED_URL_LIFETIME, this.presignedUrlLifetimeSeconds);
+        settings.put(SETTING_CONTENT_MD5_BEHAVIOR, this.contentMd5HeaderBehavior);
         if (this.persistProfilesCheckBox.isSelected()) {
             settings.put(SETTING_PROFILES, this.profileNameMap);
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
@@ -760,6 +770,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             final long lifetime = settings.get(SETTING_PRESIGNED_URL_LIFETIME).getAsLong();
             if (lifetime >= PRESIGNED_URL_LIFETIME_MIN_SECONDS && lifetime <= PRESIGNED_URL_LIFETIME_MAX_SECONDS) {
                 this.presignedUrlLifetimeSeconds = lifetime;
+            }
+        }
+
+        if (settings.has(SETTING_CONTENT_MD5_BEHAVIOR)) {
+            final String behavior = settings.get(SETTING_CONTENT_MD5_BEHAVIOR).getAsString();
+            if (Arrays.asList(CONTENT_MD5_REMOVE, CONTENT_MD5_IGNORE, CONTENT_MD5_UPDATE).contains(behavior)) {
+                this.contentMd5HeaderBehavior = behavior;
             }
         }
     }
@@ -1335,6 +1352,31 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         }
 
+        List<String> allHeaders = request.getHeaders();
+        final String lineOne = allHeaders.remove(0);
+
+        // Update Content-MD5 if applicable. aws sdk may set this for s3 uploads.
+        if (contentMd5HeaderBehavior.equals(CONTENT_MD5_UPDATE)) {
+            for (int i = 0; i < allHeaders.size(); i++) {
+                if (splitHeader(allHeaders.get(i))[0].equalsIgnoreCase("Content-MD5")) {
+                    try {
+                        final String updatedContentMD5 = helpers.base64Encode(MessageDigest.getInstance("MD5").digest(
+                                Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length)));
+                        allHeaders.set(i, "Content-MD5: " + updatedContentMD5);
+                    } catch (NoSuchAlgorithmException e) {
+                        logger.error("Failed to compute value for Content-MD5 header. Leaving as is.");
+                    }
+                }
+            }
+        }
+        else if (contentMd5HeaderBehavior.equals(CONTENT_MD5_REMOVE)) {
+            for (int i = allHeaders.size() - 1; i >= 0; i--) {
+                if (splitHeader(allHeaders.get(i))[0].equalsIgnoreCase("Content-MD5")) {
+                    allHeaders.remove(i);
+                }
+            }
+        }
+
         // Build map of headers to sign. there are 4 checks:
         //   1) if header was signed in original request
         //   2) custom signed headers specified in UI
@@ -1343,8 +1385,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         // Note that aws-sdk will refuse to sign some headers such as User-Agent
         Map<String, List<String>> signedHeaderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         Map<String, List<String>> unsignedHeaderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        List<String> allHeaders = request.getHeaders();
-        final String lineOne = allHeaders.remove(0);
 
         for (final String header : allHeaders) {
             final String[] tokens = splitHeader(header);

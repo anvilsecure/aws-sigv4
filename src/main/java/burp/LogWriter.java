@@ -32,13 +32,13 @@ public class LogWriter
     public static String levelNameFromInt(final int level)
     {
         switch (level) {
-            case LogWriter.DEBUG_LEVEL:
+            case DEBUG_LEVEL:
                 return "debug";
-            case LogWriter.INFO_LEVEL:
+            case INFO_LEVEL:
                 return "info";
-            case LogWriter.ERROR_LEVEL:
+            case ERROR_LEVEL:
                 return "error";
-            case LogWriter.FATAL_LEVEL:
+            case FATAL_LEVEL:
                 return "fatal";
         }
         return "*INVALID*";

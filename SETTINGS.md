@@ -13,6 +13,19 @@ Any header names specified here will be added to the signature if they exist in 
 original request. Note that some headers cannot be included, such as User-Agent as
 the AWS SDK will ignore them. 
 
+### ContentMD5HeaderBehavior
+
+Takes 3 possible values that determine handling of the Content-MD5 header:
+
+* `remove` Remove the Content-MD5 header.
+* `ignore` Leave the Content-MD5 header alone. This is the Default.
+* `update` Update the Content-MD5 header with a valid digest.
+
+S3 uploads may optionally use this header so it must either be updated or removed
+if the request body changes. Note that CustomSignedHeaders are added after the
+Content-MD5 header is processed and so are not affected. If Content-MD5 is present,
+S3 requires it to be included in the signature.
+
 ### CustomSignedHeaders
 
 **UI name: Custom Signed Headers**
