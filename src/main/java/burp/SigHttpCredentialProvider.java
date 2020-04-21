@@ -77,7 +77,7 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
                     requestUri.getPort(),
                     requestUri.getScheme().equalsIgnoreCase("https"),
                     helpers.buildHttpRequest(requestUri.toURL()));
-        } catch (MalformedURLException e) {
+        } catch (MalformedURLException | IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid URL for HttpGet: "+requestUri);
         }
 

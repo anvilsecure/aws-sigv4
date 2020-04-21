@@ -6,11 +6,14 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
 /*
-this class provides a dialog for filling out missing profile fields when adding sigv4 to an unsigned request. since region and service are
-optional profile parameters, this dialog can be used to prompt the user for them without modifying the profile. the reason service and
-region are optional is because an empty value means the region and service from the original request should be used. however, when adding
-a new signature, service and region are not available in the original request.
- */
+This class provides a dialog for filling out missing signature fields when adding
+sigv4 to a request. Since region and service are optional profile parameters, this
+dialog can be used to prompt the user for them without modifying the profile. The
+reason service and region are optional is because an empty value means the region
+and service from the original request should be used. However, when adding a new
+signature, service and region are not available in the original request (located
+in the Authorization header).
+*/
 public class SigProfileEditorReadOnlyDialog extends SigProfileEditorDialog
 {
     private SigProfile editedProfile;
@@ -25,6 +28,13 @@ public class SigProfileEditorReadOnlyDialog extends SigProfileEditorDialog
         }
         this.regionTextField.setHintText("Required");
         this.serviceTextField.setHintText("Required");
+        if (this.regionTextField.getText().isEmpty()) {
+            // populate region from the environment (if defined)
+            this.regionTextField.setText(SigProfile.getDefaultRegion());
+        }
+
+        focusEmptyField();
+
         this.okButton.removeActionListener(this.okButton.getActionListeners()[0]);
         this.okButton.addActionListener(new ActionListener()
         {
@@ -51,6 +61,13 @@ public class SigProfileEditorReadOnlyDialog extends SigProfileEditorDialog
         });
     }
 
+    public void focusEmptyField() {
+        this.serviceTextField.requestFocus();
+        if (this.regionTextField.getText().isEmpty()) {
+            this.regionTextField.requestFocus();
+        }
+    }
+
     private void disableField(JTextField textField)
     {
         textField.setEditable(false);
@@ -67,5 +84,6 @@ public class SigProfileEditorReadOnlyDialog extends SigProfileEditorDialog
 
         providerPanel.setVisible(false);
         pack();
+        setLocationRelativeTo(SwingUtilities.getWindowAncestor(BurpExtender.getBurp().getUiComponent()));
     }
 }

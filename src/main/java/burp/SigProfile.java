@@ -205,17 +205,21 @@ public class SigProfile implements Cloneable
         this.service = "";
     }
 
+    public static String getDefaultRegion()
+    {
+        final String defaultRegion = System.getenv("AWS_DEFAULT_REGION");
+        return (defaultRegion == null) ? "" : defaultRegion;
+    }
+
     public static SigProfile fromEnvironment()
     {
         final String envAccessKeyId = System.getenv("AWS_ACCESS_KEY_ID");
         if (envAccessKeyId != null) {
             final String envSecretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
             if (envSecretKey != null) {
-                SigProfile.Builder builder = new SigProfile.Builder("ENV");
-                builder.withAccessKeyId(envAccessKeyId);
-                if (System.getenv("AWS_DEFAULT_REGION") != null) {
-                    builder.withRegion(System.getenv("AWS_DEFAULT_REGION"));
-                }
+                SigProfile.Builder builder = new SigProfile.Builder("ENV")
+                        .withAccessKeyId(envAccessKeyId)
+                        .withRegion(getDefaultRegion());
                 final String envSessionToken = System.getenv("AWS_SESSION_TOKEN");
                 if (envSessionToken == null) {
                     builder.withCredentialProvider(new SigStaticCredentialProvider(new SigStaticCredential(envAccessKeyId, envSecretKey)), DEFAULT_STATIC_PRIORITY);

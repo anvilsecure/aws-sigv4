@@ -921,13 +921,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                     SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(null, "Add Signature", true, profile);
                                     callbacks.customizeUiComponent(dialog);
                                     dialog.disableForEdit();
-                                    // set focus to first missing field
-                                    if (StringUtils.isEmpty(profile.getRegion())) {
-                                        dialog.regionTextField.requestFocus();
-                                    }
-                                    else {
-                                        dialog.serviceTextField.requestFocus();
-                                    }
                                     dialog.setVisible(true);
                                     if (dialog.getProfile() == null) {
                                         // user hit "Cancel", abort.
@@ -942,7 +935,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                         // XXX we do some work to prevent custom signed headers specified in the SigV4 UI from
                                         // showing up in the Raw message editor tab to prevent them from being duplicated when
                                         // it's signed again. consider modifying signRequest() to optionally skip adding these.
-                                        IRequestInfo signedRequestInfo = helpers.analyzeRequest(signRequest(messages[0].getHttpService(), messages[0].getRequest(), profileCopy));
+                                        final byte[] signedRequest = signRequest(messages[0].getHttpService(), messages[0].getRequest(), profileCopy);
+                                        if (signedRequest == null || signedRequest.length == 0) {
+                                            throw new NullPointerException("Request signing failed for profile: "+profileCopy.getName());
+                                        }
+                                        IRequestInfo signedRequestInfo = helpers.analyzeRequest(signedRequest);
 
                                         // make sure new signature contains a keyId that can be used to automatically select the correct profile
                                         Map<String, String> signature = parseSigV4AuthorizationHeader(signedRequestInfo.getHeaders().stream()
@@ -989,30 +986,25 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                     .findFirst()
                                     .orElse(null);
 
+                            SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(
+                                    null, "Edit Signature", true,
+                                    (signingProfile != null) ? signingProfile : new SigProfile.Builder("TEMP").build());
+
                             if (signingProfile == null) {
-                                // unrecognized keyId in signature
-                                SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(null, "Edit Signature", true,
-                                        new SigProfile.Builder("TEMP").build());
                                 // populate Add Profile dialog with some defaults taken from the Authorization header
                                 dialog.nameTextField.setText(" ");
                                 dialog.profileKeyIdTextField.setText(signature.get("accessKeyId"));
+                            }
+
+                            if (StringUtils.isNotEmpty(signature.get("service")))
                                 dialog.serviceTextField.setText(signature.get("service"));
+                            if (StringUtils.isNotEmpty(signature.get("region")))
                                 dialog.regionTextField.setText(signature.get("region"));
-                                dialog.disableForEdit();
-                                dialog.setVisible(true);
-                                signingProfile = dialog.getProfile();
-                            }
-                            else {
-                                SigProfileEditorReadOnlyDialog dialog = new SigProfileEditorReadOnlyDialog(null, "Edit Signature", true, signingProfile);
-                                callbacks.customizeUiComponent(dialog);
-                                // disable profile name and keyId since they should be changed in the top-level plugin tab.
-                                // XXX would be nice to have a combobox for the profile here instead of disabling.
-                                dialog.disableForEdit();
-                                dialog.serviceTextField.setText(signature.getOrDefault("service", signingProfile.getService()));
-                                dialog.regionTextField.setText(signature.getOrDefault("region", signingProfile.getRegion()));
-                                dialog.setVisible(true);
-                                signingProfile = dialog.getProfile();
-                            }
+                            callbacks.customizeUiComponent(dialog);
+                            dialog.disableForEdit();
+                            dialog.focusEmptyField();
+                            dialog.setVisible(true);
+                            signingProfile = dialog.getProfile();
 
                             if (signingProfile != null) {
                                 // preserve header order by getting index of first Authorization header

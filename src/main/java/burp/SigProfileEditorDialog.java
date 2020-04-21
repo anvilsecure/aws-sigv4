@@ -65,12 +65,6 @@ public class SigProfileEditorDialog extends JDialog
         return newConstraint(gridx, gridy, 1, 1);
     }
 
-    private String getDefaultRegion()
-    {
-        final String defaultRegion = System.getenv("AWS_DEFAULT_REGION");
-        return (defaultRegion == null) ? "" : defaultRegion;
-    }
-
     /*
     return a dialog with a form for editing profiles. optional profile param can be used to populate the form.
     set profile to null for a create form.
@@ -97,7 +91,7 @@ public class SigProfileEditorDialog extends JDialog
         basicPanel.add(profileKeyIdTextField, newConstraint(1, 1));
         basicPanel.add(new JLabel("Region"), newConstraint(0, 2, GridBagConstraints.LINE_START));
         // for add profile dialog, fill default region
-        this.regionTextField = new JTextFieldHint(profile == null ? getDefaultRegion() : "", TEXT_FIELD_WIDTH, "Optional");
+        this.regionTextField = new JTextFieldHint(profile == null ? SigProfile.getDefaultRegion() : "", TEXT_FIELD_WIDTH, "Optional");
         basicPanel.add(regionTextField, newConstraint(1, 2));
         basicPanel.add(new JLabel("Service"), newConstraint(0, 3, GridBagConstraints.LINE_START));
         this.serviceTextField = new JTextFieldHint("", TEXT_FIELD_WIDTH, "Optional");
