@@ -614,7 +614,11 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.logger.configure(callbacks.getStdout(), callbacks.getStderr(), LogWriter.DEFAULT_LEVEL);
         final String setting = this.callbacks.loadExtensionSetting(SETTING_LOG_LEVEL);
         if (setting != null) {
-            setLogLevel(Integer.parseInt(setting));
+            try {
+                setLogLevel(Integer.parseInt(setting));
+            } catch (NumberFormatException ignored) {
+                // use default level
+            }
         }
 
         this.profileKeyIdMap = new HashMap<>();
@@ -699,8 +703,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             return;
         }
 
-        if (settings.has(SETTING_LOG_LEVEL))
-            setLogLevel(settings.get(SETTING_LOG_LEVEL).getAsInt());
+        if (settings.has(SETTING_LOG_LEVEL)) {
+            try {
+                setLogLevel(settings.get(SETTING_LOG_LEVEL).getAsInt());
+            } catch (NumberFormatException ignored) {
+                // use default level
+            }
+        }
 
         // load profiles
         if (settings.has(SETTING_PROFILES)) {
