@@ -206,6 +206,7 @@ public class SigProfileImportDialog extends JDialog
                 final String name = (String) model.getValueAt(i, NAME_COLUMN_INDEX);
                 SigProfile profile = this.profileNameMap.get(name).sigProfile;
                 burp.addProfile(profile);
+                model.setValueAt(false, i, SELECT_COLUMN_INDEX);
             }
         }
     }
