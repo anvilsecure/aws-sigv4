@@ -694,6 +694,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         if (StringUtils.isEmpty(jsonString)) {
             logger.error("Invalid Json settings. Skipping import.");
+            return;
         }
         JsonObject settings;
         try {
@@ -724,7 +725,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             for (final String name : profileMap.keySet()) {
                 try {
                     addProfile(profileMap.get(name));
-                } catch (IllegalArgumentException exc) {
+                } catch (IllegalArgumentException | NullPointerException exc) {
                     logger.error("Failed to add profile: "+name);
                 }
             }
