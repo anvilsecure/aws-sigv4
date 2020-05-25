@@ -4,7 +4,6 @@ import burp.error.SigCredentialProviderException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import com.google.gson.*;
-import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -26,12 +25,13 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.lang.reflect.Type;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -53,22 +53,12 @@ import java.util.stream.Stream;
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     // make sure to update version in build.gradle as well
-    private static final String EXTENSION_VERSION = "0.2.3";
+    private static final String EXTENSION_VERSION = "0.2.4";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
     private static final String SETTING_VERSION = "ExtensionVersion";
-    private static final String SETTING_PROFILES = "SerializedProfileList";
-    private static final String SETTING_PERSISTENT_PROFILES = "PersistentProfiles";
-    private static final String SETTING_EXTENSION_ENABLED = "ExtensionEnabled";
-    private static final String SETTING_DEFAULT_PROFILE_NAME = "DefaultProfileName";
     private static final String SETTING_LOG_LEVEL = "LogLevel";
-    private static final String SETTING_CUSTOM_HEADERS = "CustomSignedHeaders";
-    private static final String SETTING_CUSTOM_HEADERS_OVERWRITE = "CustomSignedHeadersOverwrite";
-    private static final String SETTING_ADDITIONAL_SIGNED_HEADER_NAMES = "AdditionalSignedHeaderNames";
-    private static final String SETTING_IN_SCOPE_ONLY = "InScopeOnly";
-    private static final String SETTING_PRESERVE_HEADER_ORDER = "PreserveHeaderOrder";
-    private static final String SETTING_PRESIGNED_URL_LIFETIME = "PresignedUrlLifetimeInSeconds";
-    private static final String SETTING_CONTENT_MD5_BEHAVIOR = "ContentMD5HeaderBehavior";
+    private static final String SETTING_CONFIG_VERSION = "SettingsVersion";
 
     public static final String EXTENSION_NAME = "SigV4"; // Name in extender menu
     public static final String DISPLAY_NAME = "SigV4"; // name for tabs, menu, and other UI components
@@ -117,6 +107,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JTable customHeadersTable;
     private JCheckBox customHeadersOverwriteCheckbox;
     private JScrollPane outerScrollPane;
+
+    // TODO - Put into a "More" or "Advanced" settings dialog
+    private JCheckBox signingEnabledForProxyCheckbox = new JCheckBox();
+    private JCheckBox signingEnabledForSpiderCheckBox = new JCheckBox();
+    private JCheckBox signingEnabledForScannerCheckBox = new JCheckBox();
+    private JCheckBox signingEnabledForIntruderCheckBox = new JCheckBox();
+    private JCheckBox signingEnabledForRepeaterCheckBox = new JCheckBox();
+    private JCheckBox signingEnabledForSequencerCheckBox = new JCheckBox();
+    private JCheckBox signingEnabledForExtenderCheckBox = new JCheckBox();
 
     // mimic burp colors
     protected static final Color textOrange = new Color(255, 102, 51);
@@ -177,6 +176,16 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 dialog.setVisible(false);
             });
             buttonPanel.add(okButton);
+            JButton pasteButton = new JButton("Paste");
+            pasteButton.addActionListener(actionEvent1 -> {
+                Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                try {
+                    textPanel.setText((String)clipboard.getData(DataFlavor.stringFlavor));
+                } catch (UnsupportedFlavorException | IOException e) {
+                    logger.error("Failed to paste clipboard contents");
+                }
+            });
+            buttonPanel.add(pasteButton);
             JButton cancelButton = new JButton("Cancel");
             cancelButton.addActionListener(actionEvent1 -> {
                 dialog.setVisible(false);
@@ -199,6 +208,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             JPanel mainPanel = new JPanel(new BorderLayout());
             JTextArea textPanel = new JTextArea();
             textPanel.setText(exportExtensionSettingsToJson());
+            textPanel.setCaretPosition(0); // scroll to top
             textPanel.setEditable(false);
             JScrollPane scrollPane = new JScrollPane(textPanel);
             mainPanel.add(scrollPane, BorderLayout.CENTER);
@@ -644,7 +654,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     build Gson object for de/serialization of settings. SigCredential, SigCredentialProvider, and Path need
     to be handled as a special case since they're interfaces.
      */
-    private Gson getGsonSerializer()
+    private Gson getGsonSerializer(final double settingsVersion)
     {
         return new GsonBuilder()
                 .registerTypeAdapter(SigCredential.class, new SigCredentialSerializer())
@@ -664,131 +674,101 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     }
                 })
                 .setPrettyPrinting() // not necessary...
+                .setVersion(settingsVersion)
+                //.setFieldNamingPolicy(FieldNamingPolicy.UPPER_CAMEL_CASE)
                 .create();
     }
 
     private String exportExtensionSettingsToJson()
     {
-        HashMap<String, Object> settings = new HashMap<>();
-        settings.put(SETTING_LOG_LEVEL, this.logger.getLevel());
-        settings.put(SETTING_VERSION, EXTENSION_VERSION);
-        settings.put(SETTING_PERSISTENT_PROFILES, this.persistProfilesCheckBox.isSelected());
-        settings.put(SETTING_EXTENSION_ENABLED, this.signingEnabledCheckBox.isSelected());
-        settings.put(SETTING_DEFAULT_PROFILE_NAME, this.getDefaultProfileName());
-        settings.put(SETTING_CUSTOM_HEADERS, getCustomHeadersFromUI());
-        settings.put(SETTING_CUSTOM_HEADERS_OVERWRITE, this.customHeadersOverwriteCheckbox.isSelected());
-        settings.put(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES, getAdditionalSignedHeadersFromUI());
-        settings.put(SETTING_IN_SCOPE_ONLY, this.inScopeOnlyCheckBox.isSelected());
-        settings.put(SETTING_PRESERVE_HEADER_ORDER, this.preserveHeaderOrder);
-        settings.put(SETTING_PRESIGNED_URL_LIFETIME, this.presignedUrlLifetimeSeconds);
-        settings.put(SETTING_CONTENT_MD5_BEHAVIOR, this.contentMd5HeaderBehavior);
+        ExtensionSettings.ExtensionSettingsBuilder builder = ExtensionSettings.builder()
+                .logLevel(this.logger.getLevel())
+                .extensionVersion(EXTENSION_VERSION)
+                .persistProfiles(this.persistProfilesCheckBox.isSelected())
+                .extensionEnabled(this.signingEnabledCheckBox.isSelected())
+                .defaultProfileName(this.getDefaultProfileName())
+                .customSignedHeaders(getCustomHeadersFromUI())
+                .customSignedHeadersOverwrite(this.customHeadersOverwriteCheckbox.isSelected())
+                .additionalSignedHeaderNames(getAdditionalSignedHeadersFromUI())
+                .inScopeOnly(this.inScopeOnlyCheckBox.isSelected())
+                .preserveHeaderOrder(this.preserveHeaderOrder)
+                .presignedUrlLifetimeInSeconds(this.presignedUrlLifetimeSeconds)
+                .contentMD5HeaderBehavior(this.contentMd5HeaderBehavior)
+                .signingEnabledForSpider(signingEnabledForSpiderCheckBox.isSelected())
+                .signingEnabledForScanner(signingEnabledForScannerCheckBox.isSelected())
+                .signingEnabledForIntruder(signingEnabledForIntruderCheckBox.isSelected())
+                .signingEnabledForRepeater(signingEnabledForRepeaterCheckBox.isSelected())
+                .signingEnabledForSequencer(signingEnabledForSequencerCheckBox.isSelected())
+                .signingEnabledForExtender(signingEnabledForExtenderCheckBox.isSelected());
         if (this.persistProfilesCheckBox.isSelected()) {
-            settings.put(SETTING_PROFILES, this.profileNameMap);
+            builder.profiles(this.profileNameMap);
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
         }
-        return getGsonSerializer().toJson(settings);
+        ExtensionSettings settings = builder.build();
+        return getGsonSerializer(settings.settingsVersion()).toJson(settings);
     }
 
     private void importExtensionSettingsFromJson(final String jsonString)
     {
-
         if (StringUtils.isEmpty(jsonString)) {
             logger.error("Invalid Json settings. Skipping import.");
             return;
         }
-        JsonObject settings;
+
+        double settingsVersion = 0.0;
         try {
-            settings = new Gson().fromJson(jsonString, JsonObject.class);
+            settingsVersion = Integer.parseInt(callbacks.loadExtensionSetting(SETTING_CONFIG_VERSION));
+        } catch (NumberFormatException ignored) {
+        }
+
+        ExtensionSettings settings;
+        try {
+            settings = getGsonSerializer(settingsVersion).fromJson(jsonString, ExtensionSettings.class);
         } catch (JsonParseException exc) {
             logger.error("Failed to parse Json settings. Using defaults.");
-            return;
+            settings = ExtensionSettings.builder().build();
         }
 
-        if (settings.has(SETTING_LOG_LEVEL)) {
-            try {
-                setLogLevel(settings.get(SETTING_LOG_LEVEL).getAsInt());
-            } catch (NumberFormatException ignored) {
-                // use default level
-            }
-        }
+        setLogLevel(settings.logLevel());
 
         // load profiles
-        if (settings.has(SETTING_PROFILES)) {
-            final Type hashMapType = new TypeToken<HashMap<String, SigProfile>>(){}.getType();
-            Map<String, SigProfile> profileMap;
+        Map<String, SigProfile> profileMap = settings.profiles();
+        for (final String name : profileMap.keySet()) {
             try {
-                profileMap = getGsonSerializer().fromJson(settings.get(SETTING_PROFILES), hashMapType);
-            } catch (JsonParseException exc) {
-                logger.error("Failed to parse profile JSON");
-                profileMap = new HashMap<>();
-            }
-            for (final String name : profileMap.keySet()) {
-                try {
-                    addProfile(profileMap.get(name));
-                } catch (IllegalArgumentException | NullPointerException exc) {
-                    logger.error("Failed to add profile: "+name);
-                }
+                addProfile(profileMap.get(name));
+            } catch (IllegalArgumentException | NullPointerException exc) {
+                logger.error("Failed to add profile: "+name);
             }
         }
 
-        if (settings.has(SETTING_DEFAULT_PROFILE_NAME))
-            setDefaultProfileName(settings.get(SETTING_DEFAULT_PROFILE_NAME).getAsString());
-        else
-            setDefaultProfileName(NO_DEFAULT_PROFILE);
+        setDefaultProfileName(settings.defaultProfileName());
+        this.persistProfilesCheckBox.setSelected(settings.persistProfiles());
+        this.signingEnabledCheckBox.setSelected(settings.extensionEnabled());
+        setCustomHeadersInUI(settings.customSignedHeaders());
+        this.customHeadersOverwriteCheckbox.setSelected(settings.customSignedHeadersOverwrite());
+        this.additionalSignedHeadersField.setText(String.join(", ", settings.additionalSignedHeaderNames()));
+        this.inScopeOnlyCheckBox.setSelected(settings.inScopeOnly());
+        this.preserveHeaderOrder = settings.preserveHeaderOrder();
 
-        if (settings.has(SETTING_PERSISTENT_PROFILES))
-            this.persistProfilesCheckBox.setSelected(settings.get(SETTING_PERSISTENT_PROFILES).getAsBoolean());
-        else
-            this.persistProfilesCheckBox.setSelected(false);
-
-        if (settings.has(SETTING_EXTENSION_ENABLED))
-            this.signingEnabledCheckBox.setSelected(settings.get(SETTING_EXTENSION_ENABLED).getAsBoolean());
-        else
-            this.signingEnabledCheckBox.setSelected(true);
-
-        if (settings.has(SETTING_CUSTOM_HEADERS)) {
-            List<String> customHeaders = new ArrayList<>();
-            for (final JsonElement header : settings.get(SETTING_CUSTOM_HEADERS).getAsJsonArray()) {
-                customHeaders.add(header.getAsString());
-            }
-            setCustomHeadersInUI(customHeaders);
+        final long lifetime = settings.presignedUrlLifetimeInSeconds();
+        if (lifetime >= PRESIGNED_URL_LIFETIME_MIN_SECONDS && lifetime <= PRESIGNED_URL_LIFETIME_MAX_SECONDS) {
+            this.presignedUrlLifetimeSeconds = lifetime;
+        }
+        else {
+            this.presignedUrlLifetimeSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
         }
 
-        if (settings.has(SETTING_CUSTOM_HEADERS_OVERWRITE))
-            this.customHeadersOverwriteCheckbox.setSelected(settings.get(SETTING_CUSTOM_HEADERS_OVERWRITE).getAsBoolean());
-        else
-            this.customHeadersOverwriteCheckbox.setSelected(false);
-
-        if (settings.has(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES)) {
-            List<String> additionalHeaders = new ArrayList<>();
-            for (JsonElement header : settings.get(SETTING_ADDITIONAL_SIGNED_HEADER_NAMES).getAsJsonArray()) {
-                additionalHeaders.add(header.getAsString());
-            }
-            this.additionalSignedHeadersField.setText(String.join(", ", additionalHeaders));
+        final String behavior = settings.contentMD5HeaderBehavior();
+        if (Arrays.asList(CONTENT_MD5_REMOVE, CONTENT_MD5_IGNORE, CONTENT_MD5_UPDATE).contains(behavior)) {
+            this.contentMd5HeaderBehavior = behavior;
         }
 
-        if (settings.has(SETTING_IN_SCOPE_ONLY))
-            this.inScopeOnlyCheckBox.setSelected(settings.get(SETTING_IN_SCOPE_ONLY).getAsBoolean());
-        else
-            this.inScopeOnlyCheckBox.setSelected(false);
-
-        if (settings.has(SETTING_PRESERVE_HEADER_ORDER))
-            this.preserveHeaderOrder = settings.get(SETTING_PRESERVE_HEADER_ORDER).getAsBoolean();
-
-        this.presignedUrlLifetimeSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
-        if (settings.has(SETTING_PRESIGNED_URL_LIFETIME)) {
-            final long lifetime = settings.get(SETTING_PRESIGNED_URL_LIFETIME).getAsLong();
-            if (lifetime >= PRESIGNED_URL_LIFETIME_MIN_SECONDS && lifetime <= PRESIGNED_URL_LIFETIME_MAX_SECONDS) {
-                this.presignedUrlLifetimeSeconds = lifetime;
-            }
-        }
-
-        if (settings.has(SETTING_CONTENT_MD5_BEHAVIOR)) {
-            final String behavior = settings.get(SETTING_CONTENT_MD5_BEHAVIOR).getAsString();
-            if (Arrays.asList(CONTENT_MD5_REMOVE, CONTENT_MD5_IGNORE, CONTENT_MD5_UPDATE).contains(behavior)) {
-                this.contentMd5HeaderBehavior = behavior;
-            }
-        }
+        signingEnabledForSpiderCheckBox.setSelected(settings.signingEnabledForSpider());
+        signingEnabledForScannerCheckBox.setSelected(settings.signingEnabledForScanner());
+        signingEnabledForIntruderCheckBox.setSelected(settings.signingEnabledForIntruder());
+        signingEnabledForRepeaterCheckBox.setSelected(settings.signingEnabledForRepeater());
+        signingEnabledForSequencerCheckBox.setSelected(settings.signingEnabledForSequencer());
+        signingEnabledForExtenderCheckBox.setSelected(settings.signingEnabledForExtender());
     }
 
     private void saveExtensionSettings()
@@ -1640,8 +1620,24 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
     private boolean isSigningEnabledForTool(final int toolFlag)
     {
-        // TODO
-        return true;
+        switch (toolFlag) {
+            case IBurpExtenderCallbacks.TOOL_PROXY:
+                return signingEnabledForProxyCheckbox.isSelected();
+            case IBurpExtenderCallbacks.TOOL_SPIDER:
+                return signingEnabledForSpiderCheckBox.isSelected();
+            case IBurpExtenderCallbacks.TOOL_SCANNER:
+                return signingEnabledForScannerCheckBox.isSelected();
+            case IBurpExtenderCallbacks.TOOL_INTRUDER:
+                return signingEnabledForIntruderCheckBox.isSelected();
+            case IBurpExtenderCallbacks.TOOL_REPEATER:
+                return signingEnabledForRepeaterCheckBox.isSelected();
+            case IBurpExtenderCallbacks.TOOL_SEQUENCER:
+                return signingEnabledForSequencerCheckBox.isSelected();
+            case IBurpExtenderCallbacks.TOOL_EXTENDER:
+                return signingEnabledForExtenderCheckBox.isSelected();
+            default:
+                return false;
+        }
     }
 
     @Override
