@@ -25,7 +25,7 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
     private String externalId;
 
     private transient SigTemporaryCredential temporaryCredential;
-    private SigStaticCredential staticCredential;
+    private SigCredential staticCredential;
     private final transient BurpExtender burp = BurpExtender.getBurp();
 
     public static final int CREDENTIAL_LIFETIME_MIN = 900;
@@ -46,14 +46,14 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
         return this.durationSeconds;
     }
 
-    public SigStaticCredential getStaticCredential()
+    public SigCredential getStaticCredential()
     {
         return this.staticCredential;
     }
 
     private SigAssumeRoleCredentialProvider() {};
 
-    private SigAssumeRoleCredentialProvider(final String roleArn, final SigStaticCredential credential)
+    private SigAssumeRoleCredentialProvider(final String roleArn, final SigCredential credential)
     {
         setRoleArn(roleArn);
         this.staticCredential = credential;
@@ -108,7 +108,7 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
 
     public static class Builder {
         private SigAssumeRoleCredentialProvider assumeRole;
-        public Builder(final String roleArn, final SigStaticCredential credential) {
+        public Builder(final String roleArn, final SigCredential credential) {
             this.assumeRole = new SigAssumeRoleCredentialProvider(roleArn, credential);
         }
         public Builder(final SigAssumeRoleCredentialProvider assumeRole) {

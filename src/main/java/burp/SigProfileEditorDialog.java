@@ -286,6 +286,9 @@ public class SigProfileEditorDialog extends JDialog
                 // initialize static creds as well
                 accessKeyIdTextField.setText(profile.getAssumeRole().getStaticCredential().getAccessKeyId());
                 secretKeyTextField.setText(profile.getAssumeRole().getStaticCredential().getSecretKey());
+                if (profile.getAssumeRole().getStaticCredential().isTemporary()) {
+                    sessionTokenTextField.setText(((SigTemporaryCredential)profile.getAssumeRole().getStaticCredential()).getSessionToken());
+                }
                 if (profile.getAssumeRolePriority() >= 0) {
                     assumeRoleProviderRadioButton.doClick();
                 }

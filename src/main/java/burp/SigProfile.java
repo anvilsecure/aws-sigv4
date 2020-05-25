@@ -23,7 +23,7 @@ public class SigProfile implements Cloneable
     public static final int DEFAULT_ASSUMEROLE_PRIORITY = 50;
     public static final int DISABLED_PRIORITY = -1;
 
-    private static transient LogWriter logger = LogWriter.getLogger();
+    private static final transient LogWriter logger = LogWriter.getLogger();
 
     private String name;
     private String region;
@@ -234,43 +234,83 @@ public class SigProfile implements Cloneable
         return null;
     }
 
-    public static ArrayList<SigProfile> fromCredentialPath(final Path path)
+    private static Path getCliConfigPath()
+    {
+        Path configPath;
+        final String envFile = System.getenv("AWS_CONFIG_FILE");
+        if (envFile != null && Files.exists(Paths.get(envFile))) {
+            configPath = Paths.get(envFile);
+        }
+        else {
+            configPath = Paths.get(System.getProperty("user.home"), ".aws", "config");
+        }
+        return configPath;
+    }
+
+    // refs: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
+    //       https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html
+    //
+    // Read profiles from an aws cli credential file. Additional properties may be read from the config
+    // file where profile names must be specified with a "profile " prefix.
+    public static List<SigProfile> fromCredentialPath(final Path path)
     {
         // parse credential file
-        ArrayList<SigProfile> profileList = new ArrayList<>();
-        ConfigParser parser = new ConfigParser(path);
-        HashMap<String, HashMap<String, String>> credentials = parser.parse();
+        List<SigProfile> profileList = new ArrayList<>();
+        Map<String, Map<String, String>> credentials = ConfigParser.parse(path);
 
-        // get aws cli config for region info (if it exists). favor path defined in environment. fallback to default path.
-        Path configPath = Paths.get(System.getProperty("user.home"), ".aws", "config");
-        final String envFile = System.getenv("AWS_CONFIG_FILE");
-        if (envFile != null) {
-            if (Files.exists(Paths.get(envFile))) {
-                configPath = Paths.get(envFile);
-            }
-        }
-        HashMap<String, HashMap<String, String>> config = (new ConfigParser(configPath)).parse();
+        // get aws cli config file if it exists.
+        Map<String, Map<String, String>> config = ConfigParser.parse(getCliConfigPath());
 
-        // build profile list
-        // TODO add support for source_profile (which can refer to itself)
+        // build profile list. settings in credentials file will take precedence over the config file.
         for (final String name : credentials.keySet()) {
-            HashMap<String, String> section = credentials.get(name);
-            if (section.containsKey("aws_access_key_id") && section.containsKey("aws_secret_access_key")) {
-                HashMap<String, String> profile = config.getOrDefault("profile " + name, new HashMap<>());
-                final String region = profile.getOrDefault("region", section.getOrDefault("region", ""));
+            // combine profile settings from credential and config file into a single map. add credentials last
+            // to overwrite duplicate settings from the config map. we want to prioritize values in the credential file
+            Map<String, String> section = new HashMap<>();
+            section.putAll(config.getOrDefault("profile "+name, new HashMap<>()));
+            section.putAll(credentials.getOrDefault(name, new HashMap<>()));
+
+            if ((section.containsKey("aws_access_key_id") && section.containsKey("aws_secret_access_key")) || section.containsKey("source_profile")) {
+                final String region = section.getOrDefault("region", "");
+                String accessKeyId = section.getOrDefault("aws_access_key_id", null);
+                String secretAccessKey = section.getOrDefault("aws_secret_access_key", null);
+                String sessionToken = section.getOrDefault("aws_session_token", null);
+
+                // if source_profile exists, check that profile for creds.
+                if (section.containsKey("source_profile")) {
+                    final String source = section.get("source_profile");
+                    Map<String, String> sourceSection = new HashMap<>();
+                    sourceSection.putAll(config.getOrDefault("profile "+source, new HashMap<>()));
+                    sourceSection.putAll(credentials.getOrDefault(source, new HashMap<>()));
+                    if (sourceSection.containsKey("aws_access_key_id") && sourceSection.containsKey("aws_secret_access_key")) {
+                        accessKeyId = sourceSection.get("aws_access_key_id");
+                        secretAccessKey = sourceSection.get("aws_secret_access_key");
+                        sessionToken = sourceSection.getOrDefault("aws_session_token", null);
+                    }
+                    else {
+                        logger.error(String.format("Profile [%s] refers to source_profile [%s] which does not contain credentials.", name, source));
+                        continue;
+                    }
+                }
+
                 SigProfile.Builder newProfileBuilder = new SigProfile.Builder(name)
-                        .withAccessKeyId(section.get("aws_access_key_id"))
+                        .withAccessKeyId(accessKeyId)
                         .withRegion(region)
-                        .withService("");
+                        .withService(""); // service is not specified in config files
                 try {
-                    final SigStaticCredential staticCredential = new SigStaticCredential(section.get("aws_access_key_id"), section.get("aws_secret_access_key"));
+                    SigCredential staticCredential;
+                    if (sessionToken != null) {
+                        staticCredential = new SigTemporaryCredential(accessKeyId, secretAccessKey, sessionToken, 0);
+                    }
+                    else {
+                        staticCredential = new SigStaticCredential(accessKeyId, secretAccessKey);
+                    }
                     newProfileBuilder.withCredentialProvider(new SigStaticCredentialProvider(staticCredential), DEFAULT_STATIC_PRIORITY);
-                    final String roleArn = profile.getOrDefault("role_arn", section.getOrDefault("role_arn", null));
+                    final String roleArn = section.getOrDefault("role_arn", null);
                     if (roleArn != null) {
                         SigAssumeRoleCredentialProvider assumeRole = new SigAssumeRoleCredentialProvider.Builder(roleArn, staticCredential)
-                                .tryRoleSessionName(profile.getOrDefault("role_session_name", section.getOrDefault("role_session_name", null)))
-                                .withDurationSeconds(Integer.parseInt(profile.getOrDefault("duration_seconds", section.getOrDefault("duration_seconds", "0"))))
-                                .tryExternalId(profile.getOrDefault("external_id", section.getOrDefault("external_id", null)))
+                                .tryRoleSessionName(section.getOrDefault("role_session_name", null))
+                                .withDurationSeconds(Integer.parseInt(section.getOrDefault("duration_seconds","0")))
+                                .tryExternalId(section.getOrDefault("external_id", null))
                                 .build();
                         newProfileBuilder.withCredentialProvider(assumeRole, DEFAULT_ASSUMEROLE_PRIORITY);
                     }

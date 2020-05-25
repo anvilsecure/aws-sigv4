@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,21 +15,15 @@ see https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html
  */
 public class ConfigParser
 {
-    private Path path;
-    private final Pattern sectionPattern = Pattern.compile("^\\s*\\[\\s*([^]]{1,256}?)\\s*\\]\\s*$");
-    private final Pattern valuePattern = Pattern.compile("^\\s*([^=]{1,256}?)\\s*=\\s*(.{1,256}?)\\s*$");
+    private static final Pattern sectionPattern = Pattern.compile("^\\s*\\[\\s*([^]]{1,256}?)\\s*\\]\\s*$");
+    private static final Pattern valuePattern = Pattern.compile("^\\s*([^=]{1,256}?)\\s*=\\s*(.{1,256}?)\\s*$");
 
-    public ConfigParser(final Path path)
+    public static Map<String, Map<String, String>> parse(final Path path)
     {
-        this.path = path;
-    }
-
-    public HashMap<String, HashMap<String, String>> parse()
-    {
-        HashMap<String, HashMap<String, String>> config = new HashMap<>();
+        Map<String, Map<String, String>> config = new HashMap<>();
         try {
-            HashMap<String, String> sectionMap = null;
-            for (Iterator<String> i = Files.lines(this.path).iterator(); i.hasNext();) {
+            Map<String, String> sectionMap = null;
+            for (Iterator<String> i = Files.lines(path).iterator(); i.hasNext();) {
                 final String line = i.next();
                 Matcher sectionMatch = sectionPattern.matcher(line);
                 if (sectionMatch.matches()) {
@@ -45,7 +40,7 @@ public class ConfigParser
                     }
                 }
             }
-        } catch (IOException exc) {
+        } catch (IOException ignore) {
         }
         return config;
     }

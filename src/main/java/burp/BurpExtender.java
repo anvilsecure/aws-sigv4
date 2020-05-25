@@ -1638,6 +1638,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return null;
     }
 
+    private boolean isSigningEnabledForTool(final int toolFlag)
+    {
+        // TODO
+        return true;
+    }
+
     @Override
     public void processHttpMessage(int toolFlag, boolean messageIsRequest, IHttpRequestResponse messageInfo)
     {
@@ -1658,7 +1664,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
         }
 
-        if (messageIsRequest && signingEnabledCheckBox.isSelected()) {
+        if (messageIsRequest && signingEnabledCheckBox.isSelected() && isSigningEnabledForTool(toolFlag)) {
             if (request == null) {
                 request = helpers.analyzeRequest(messageInfo);
             }

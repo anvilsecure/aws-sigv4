@@ -211,7 +211,7 @@ public class SigProfileImportDialog extends JDialog
         }
     }
 
-    private void updateImportTable(ArrayList<SigProfile> profiles, final String source)
+    private void updateImportTable(List<SigProfile> profiles, final String source)
     {
         // preserve selection status of current profiles.
         HashMap<String, Boolean> selectionMap =  new HashMap<>();
@@ -272,7 +272,7 @@ public class SigProfileImportDialog extends JDialog
         if (!Files.exists(credPath)) {
             burp.logger.error(String.format("Attempted to import credentials from non-existent file: %s", credPath));
         }
-        ArrayList<SigProfile> profiles = SigProfile.fromCredentialPath(credPath);
+        List<SigProfile> profiles = SigProfile.fromCredentialPath(credPath);
         burp.logger.info(String.format("Importing %d credentials from: %s", profiles.size(), credPath));
         updateImportTable(profiles, credPath.toString());
     }
@@ -280,7 +280,7 @@ public class SigProfileImportDialog extends JDialog
     private void importProfilesFromEnvironment()
     {
         // try to import creds from environment variables
-        ArrayList<SigProfile> profiles = new ArrayList<>();
+        List<SigProfile> profiles = new ArrayList<>();
         SigProfile profile = SigProfile.fromEnvironment();
         if (profile != null) {
             profiles.add(profile);
