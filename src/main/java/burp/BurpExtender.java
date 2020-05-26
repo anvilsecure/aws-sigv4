@@ -25,9 +25,7 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
-import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.ByteArrayInputStream;
@@ -63,11 +61,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     public static final String EXTENSION_NAME = "SigV4"; // Name in extender menu
     public static final String DISPLAY_NAME = "SigV4"; // name for tabs, menu, and other UI components
 
-    // ref: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
-    private static final long PRESIGNED_URL_LIFETIME_MIN_SECONDS = 1;
-    private static final long PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS = 900; // 15 minutes
-    private static final long PRESIGNED_URL_LIFETIME_MAX_SECONDS = 604800; // 7 days
-
     private static final String NO_DEFAULT_PROFILE = "        "; // ensure combobox is visible. SigProfile.profileNamePattern doesn't allow this name
 
     // Regex for extracting usable signature fields and for just identifying a request as SigV4 (loose)
@@ -87,14 +80,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private HashMap<String, SigProfile> profileNameMap; // map name to profile
     protected LogWriter logger = LogWriter.getLogger();
 
-    // Persistent settings
-    private boolean preserveHeaderOrder = true; // preserve order of headers after signing
-    private long presignedUrlLifetimeSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
-    private static final String CONTENT_MD5_UPDATE = "update"; // recompute a valid md5
-    private static final String CONTENT_MD5_REMOVE = "remove"; // remove the header
-    private static final String CONTENT_MD5_IGNORE = "ignore"; // do nothing
-    private String contentMd5HeaderBehavior = CONTENT_MD5_IGNORE;
-
     private JLabel statusLabel;
     private JCheckBox signingEnabledCheckBox;
     private JComboBox<String> defaultProfileComboBox;
@@ -102,20 +87,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     private JCheckBox persistProfilesCheckBox;
     private JCheckBox inScopeOnlyCheckBox;
     private JTextField additionalSignedHeadersField;
+    private AdvancedSettingsDialog advancedSettingsDialog;
 
     private JTable profileTable;
     private JTable customHeadersTable;
     private JCheckBox customHeadersOverwriteCheckbox;
     private JScrollPane outerScrollPane;
-
-    // TODO - Put into a "More" or "Advanced" settings dialog
-    private JCheckBox signingEnabledForProxyCheckbox = new JCheckBox();
-    private JCheckBox signingEnabledForSpiderCheckBox = new JCheckBox();
-    private JCheckBox signingEnabledForScannerCheckBox = new JCheckBox();
-    private JCheckBox signingEnabledForIntruderCheckBox = new JCheckBox();
-    private JCheckBox signingEnabledForRepeaterCheckBox = new JCheckBox();
-    private JCheckBox signingEnabledForSequencerCheckBox = new JCheckBox();
-    private JCheckBox signingEnabledForExtenderCheckBox = new JCheckBox();
 
     // mimic burp colors
     protected static final Color textOrange = new Color(255, 102, 51);
@@ -160,86 +137,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         otherSettingsPanel.add(new JLabel("Default Profile"));
         otherSettingsPanel.add(defaultProfileComboBox);
 
-
-        // import/export settings json with dialogs
-        JButton settingsImportButton = new JButton("Import");
-        settingsImportButton.addActionListener(actionEvent -> {
-            JDialog dialog = new JDialog((Frame)null, "Import Settings Json", true);
-            JPanel mainPanel = new JPanel(new BorderLayout());
-            JTextArea textPanel = new JTextArea();
-            JScrollPane scrollPane = new JScrollPane(textPanel);
-            mainPanel.add(scrollPane, BorderLayout.CENTER);
-            JPanel buttonPanel = new JPanel();
-            JButton okButton = new JButton("Ok");
-            okButton.addActionListener(actionEvent1 -> {
-                importExtensionSettingsFromJson(textPanel.getText());
-                dialog.setVisible(false);
-            });
-            buttonPanel.add(okButton);
-            JButton pasteButton = new JButton("Paste");
-            pasteButton.addActionListener(actionEvent1 -> {
-                Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-                try {
-                    textPanel.setText((String)clipboard.getData(DataFlavor.stringFlavor));
-                } catch (UnsupportedFlavorException | IOException e) {
-                    logger.error("Failed to paste clipboard contents");
-                }
-            });
-            buttonPanel.add(pasteButton);
-            JButton cancelButton = new JButton("Cancel");
-            cancelButton.addActionListener(actionEvent1 -> {
-                dialog.setVisible(false);
-            });
-            buttonPanel.add(cancelButton);
-            mainPanel.add(buttonPanel, BorderLayout.PAGE_END);
-            dialog.add(mainPanel);
-            dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-            // set dialog location and size
-            final Point burpLocation = SwingUtilities.getWindowAncestor(getUiComponent()).getLocation();
-            dialog.setLocation(burpLocation);
-            dialog.setPreferredSize(SwingUtilities.getWindowAncestor(getUiComponent()).getBounds().getSize());
-            dialog.pack();
-            dialog.setVisible(true);
+        JButton advancedSettingsButton = new JButton("Advanced");
+        advancedSettingsButton.addActionListener(actionEvent -> {
+            advancedSettingsDialog.setVisible(true);
         });
-        JButton settingsExportButton = new JButton("Export");
-        settingsExportButton.addActionListener(actionEvent -> {
-            // display settings json in a new dialog
-            JDialog dialog = new JDialog((Frame)null, "Export Settings Json", true);
-            JPanel mainPanel = new JPanel(new BorderLayout());
-            JTextArea textPanel = new JTextArea();
-            textPanel.setText(exportExtensionSettingsToJson());
-            textPanel.setCaretPosition(0); // scroll to top
-            textPanel.setEditable(false);
-            JScrollPane scrollPane = new JScrollPane(textPanel);
-            mainPanel.add(scrollPane, BorderLayout.CENTER);
-            JPanel buttonPanel = new JPanel();
-            JButton copyToClipboardButton = new JButton("Copy to clipboard");
-            copyToClipboardButton.addActionListener(actionEvent12 -> {
-                Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-                clipboard.setContents(new StringSelection(textPanel.getText()), null);
-            });
-            buttonPanel.add(copyToClipboardButton);
-            JButton closeButton = new JButton("Close");
-            closeButton.addActionListener(actionEvent1 -> {
-                dialog.setVisible(false);
-            });
-            buttonPanel.add(closeButton);
-            mainPanel.add(buttonPanel, BorderLayout.PAGE_END);
-            dialog.add(mainPanel);
-            dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-            // place dialog in upper left of burp window
-            final Point burpLocation = SwingUtilities.getWindowAncestor(getUiComponent()).getLocation();
-            dialog.setLocation(burpLocation);
-            // make sure dialog height and width do not exceed burp window height and width
-            final int height = SwingUtilities.getWindowAncestor(getUiComponent()).getBounds().getSize().height;
-            final int width = SwingUtilities.getWindowAncestor(getUiComponent()).getBounds().getSize().width;
-            dialog.pack();
-            dialog.setSize(Integer.min(width, dialog.getSize().width), height);
-            dialog.setVisible(true);
-        });
-        otherSettingsPanel.add(new JLabel("Settings Json"));
-        otherSettingsPanel.add(settingsImportButton);
-        otherSettingsPanel.add(settingsExportButton);
+        checkBoxPanel.add(new JSeparator(SwingConstants.VERTICAL));
+        checkBoxPanel.add(advancedSettingsButton);
+        advancedSettingsDialog = AdvancedSettingsDialog.get();
+        advancedSettingsDialog.applyExtensionSettings(new ExtensionSettings()); // load with defaults for now
 
         GridBagConstraints c00 = new GridBagConstraints(); c00.anchor = GridBagConstraints.FIRST_LINE_START; c00.gridy = 0; c00.gridwidth = 2;
         GridBagConstraints c01 = new GridBagConstraints(); c01.anchor = GridBagConstraints.FIRST_LINE_START; c01.gridy = 1; c01.gridwidth = 2; c01.insets = new Insets(10, 0, 10, 0);
@@ -679,7 +584,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .create();
     }
 
-    private String exportExtensionSettingsToJson()
+    protected String exportExtensionSettingsToJson()
     {
         ExtensionSettings.ExtensionSettingsBuilder builder = ExtensionSettings.builder()
                 .logLevel(this.logger.getLevel())
@@ -691,15 +596,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .customSignedHeadersOverwrite(this.customHeadersOverwriteCheckbox.isSelected())
                 .additionalSignedHeaderNames(getAdditionalSignedHeadersFromUI())
                 .inScopeOnly(this.inScopeOnlyCheckBox.isSelected())
-                .preserveHeaderOrder(this.preserveHeaderOrder)
-                .presignedUrlLifetimeInSeconds(this.presignedUrlLifetimeSeconds)
-                .contentMD5HeaderBehavior(this.contentMd5HeaderBehavior)
-                .signingEnabledForSpider(signingEnabledForSpiderCheckBox.isSelected())
-                .signingEnabledForScanner(signingEnabledForScannerCheckBox.isSelected())
-                .signingEnabledForIntruder(signingEnabledForIntruderCheckBox.isSelected())
-                .signingEnabledForRepeater(signingEnabledForRepeaterCheckBox.isSelected())
-                .signingEnabledForSequencer(signingEnabledForSequencerCheckBox.isSelected())
-                .signingEnabledForExtender(signingEnabledForExtenderCheckBox.isSelected());
+                .preserveHeaderOrder(this.advancedSettingsDialog.preserveHeaderOrderCheckBox.isSelected())
+                .presignedUrlLifetimeInSeconds(this.advancedSettingsDialog.getPresignedUrlLifetimeSeconds())
+                .contentMD5HeaderBehavior(this.advancedSettingsDialog.getContentMD5HeaderBehavior())
+                .signingEnabledForSpider(advancedSettingsDialog.signingEnabledForSpiderCheckBox.isSelected())
+                .signingEnabledForScanner(advancedSettingsDialog.signingEnabledForScannerCheckBox.isSelected())
+                .signingEnabledForIntruder(advancedSettingsDialog.signingEnabledForIntruderCheckBox.isSelected())
+                .signingEnabledForRepeater(advancedSettingsDialog.signingEnabledForRepeaterCheckBox.isSelected())
+                .signingEnabledForSequencer(advancedSettingsDialog.signingEnabledForSequencerCheckBox.isSelected())
+                .signingEnabledForExtender(advancedSettingsDialog.signingEnabledForExtenderCheckBox.isSelected());
         if (this.persistProfilesCheckBox.isSelected()) {
             builder.profiles(this.profileNameMap);
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
@@ -708,7 +613,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         return getGsonSerializer(settings.settingsVersion()).toJson(settings);
     }
 
-    private void importExtensionSettingsFromJson(final String jsonString)
+    protected void importExtensionSettingsFromJson(final String jsonString)
     {
         if (StringUtils.isEmpty(jsonString)) {
             logger.error("Invalid Json settings. Skipping import.");
@@ -748,27 +653,18 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         this.customHeadersOverwriteCheckbox.setSelected(settings.customSignedHeadersOverwrite());
         this.additionalSignedHeadersField.setText(String.join(", ", settings.additionalSignedHeaderNames()));
         this.inScopeOnlyCheckBox.setSelected(settings.inScopeOnly());
-        this.preserveHeaderOrder = settings.preserveHeaderOrder();
 
         final long lifetime = settings.presignedUrlLifetimeInSeconds();
-        if (lifetime >= PRESIGNED_URL_LIFETIME_MIN_SECONDS && lifetime <= PRESIGNED_URL_LIFETIME_MAX_SECONDS) {
-            this.presignedUrlLifetimeSeconds = lifetime;
-        }
-        else {
-            this.presignedUrlLifetimeSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
+        if (lifetime < ExtensionSettings.PRESIGNED_URL_LIFETIME_MIN_SECONDS || lifetime > ExtensionSettings.PRESIGNED_URL_LIFETIME_MAX_SECONDS) {
+            settings = settings.withPresignedUrlLifetimeInSeconds(ExtensionSettings.PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS);
         }
 
         final String behavior = settings.contentMD5HeaderBehavior();
-        if (Arrays.asList(CONTENT_MD5_REMOVE, CONTENT_MD5_IGNORE, CONTENT_MD5_UPDATE).contains(behavior)) {
-            this.contentMd5HeaderBehavior = behavior;
+        if (!Arrays.asList(ExtensionSettings.CONTENT_MD5_REMOVE, ExtensionSettings.CONTENT_MD5_IGNORE, ExtensionSettings.CONTENT_MD5_UPDATE).contains(behavior)) {
+            settings = settings.withContentMD5HeaderBehavior(ExtensionSettings.CONTENT_MD5_DEFAULT);
         }
 
-        signingEnabledForSpiderCheckBox.setSelected(settings.signingEnabledForSpider());
-        signingEnabledForScannerCheckBox.setSelected(settings.signingEnabledForScanner());
-        signingEnabledForIntruderCheckBox.setSelected(settings.signingEnabledForIntruder());
-        signingEnabledForRepeaterCheckBox.setSelected(settings.signingEnabledForRepeater());
-        signingEnabledForSequencerCheckBox.setSelected(settings.signingEnabledForSequencer());
-        signingEnabledForExtenderCheckBox.setSelected(settings.signingEnabledForExtender());
+        advancedSettingsDialog.applyExtensionSettings(settings);
     }
 
     private void saveExtensionSettings()
@@ -897,7 +793,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml(msg));
                             }
                             else {
-                                signedUrl = presignRequest(messages[0].getHttpService(), messages[0].getRequest(), profile, BurpExtender.this.presignedUrlLifetimeSeconds).toString();
+                                signedUrl = presignRequest(messages[0].getHttpService(), messages[0].getRequest(), profile, advancedSettingsDialog.getPresignedUrlLifetimeSeconds()).toString();
                             }
                             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                             clipboard.setContents(new StringSelection(signedUrl), null);
@@ -1346,7 +1242,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         final String lineOne = allHeaders.remove(0);
 
         // Update Content-MD5 if applicable. aws sdk may set this for s3 uploads.
-        if (contentMd5HeaderBehavior.equals(CONTENT_MD5_UPDATE)) {
+        if (advancedSettingsDialog.getContentMD5HeaderBehavior().equals(ExtensionSettings.CONTENT_MD5_UPDATE)) {
             for (int i = 0; i < allHeaders.size(); i++) {
                 if (splitHeader(allHeaders.get(i))[0].equalsIgnoreCase("Content-MD5")) {
                     try {
@@ -1359,7 +1255,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 }
             }
         }
-        else if (contentMd5HeaderBehavior.equals(CONTENT_MD5_REMOVE)) {
+        else if (advancedSettingsDialog.getContentMD5HeaderBehavior().equals(ExtensionSettings.CONTENT_MD5_REMOVE)) {
             for (int i = allHeaders.size() - 1; i >= 0; i--) {
                 if (splitHeader(allHeaders.get(i))[0].equalsIgnoreCase("Content-MD5")) {
                     allHeaders.remove(i);
@@ -1503,7 +1399,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
 
         // only useful when populating the message editor tab for readability
-        if (preserveHeaderOrder) {
+        if (advancedSettingsDialog.preserveHeaderOrderCheckBox.isSelected()) {
             Map<String, Integer> headerOrderMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             int i = 0;
             for (final String header : allHeaders) {
@@ -1622,19 +1518,19 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     {
         switch (toolFlag) {
             case IBurpExtenderCallbacks.TOOL_PROXY:
-                return signingEnabledForProxyCheckbox.isSelected();
+                return advancedSettingsDialog.signingEnabledForProxyCheckbox.isSelected();
             case IBurpExtenderCallbacks.TOOL_SPIDER:
-                return signingEnabledForSpiderCheckBox.isSelected();
+                return advancedSettingsDialog.signingEnabledForSpiderCheckBox.isSelected();
             case IBurpExtenderCallbacks.TOOL_SCANNER:
-                return signingEnabledForScannerCheckBox.isSelected();
+                return advancedSettingsDialog.signingEnabledForScannerCheckBox.isSelected();
             case IBurpExtenderCallbacks.TOOL_INTRUDER:
-                return signingEnabledForIntruderCheckBox.isSelected();
+                return advancedSettingsDialog.signingEnabledForIntruderCheckBox.isSelected();
             case IBurpExtenderCallbacks.TOOL_REPEATER:
-                return signingEnabledForRepeaterCheckBox.isSelected();
+                return advancedSettingsDialog.signingEnabledForRepeaterCheckBox.isSelected();
             case IBurpExtenderCallbacks.TOOL_SEQUENCER:
-                return signingEnabledForSequencerCheckBox.isSelected();
+                return advancedSettingsDialog.signingEnabledForSequencerCheckBox.isSelected();
             case IBurpExtenderCallbacks.TOOL_EXTENDER:
-                return signingEnabledForExtenderCheckBox.isSelected();
+                return advancedSettingsDialog.signingEnabledForExtenderCheckBox.isSelected();
             default:
                 return false;
         }

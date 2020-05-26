@@ -2,7 +2,7 @@
 
 This file describes the JSON settings for the extension. Most settings can be
 configured in the UI tab, but some more advanced settings are only available by
-first exporting the settings JSON, modifying the setting, then importing.  
+first exporting the settings JSON, modifying the setting, then importing.
 
 ### AdditionalSignedHeaderNames
 
@@ -95,3 +95,10 @@ menu item. See https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-strin
 **UI name: AWS Credentials**
 
 If *PersistentProfiles* is true, this contains the GSON serialized profiles.
+
+### SigningEnabledFor*
+
+**UI name: Advanced -> Tools Enabled for Signing**
+
+This setting exists for each Burp tool. If true, signing will be enabled for
+requests originating from that tool. Default is to sign requests for all tools.

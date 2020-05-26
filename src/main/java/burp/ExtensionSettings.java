@@ -3,6 +3,7 @@ package burp;
 import com.google.gson.annotations.Since;
 import lombok.*;
 import lombok.experimental.Accessors;
+import lombok.experimental.NonFinal;
 
 import java.util.List;
 import java.util.Map;
@@ -15,10 +16,22 @@ import java.util.Map;
 public class ExtensionSettings {
 
     // use this field to track settings version. when adding a new setting, bump this value
-    // and annotate the new setting with @Since(NEW_VERSION). when the extension loads an
+    // and annotate the new setting with @Since(x.y). when the extension loads an
     // old settings file, it will just use the defaults for new settings.
+    private static final double SETTINGS_VERSION = 0.0;
+
+    // ref: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
+    public static final long PRESIGNED_URL_LIFETIME_MIN_SECONDS = 1;
+    public static final long PRESIGNED_URL_LIFETIME_MAX_SECONDS = 604800; // 7 days
+    public static final long PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS = 900; // 15 minutes
+
+    public static final String CONTENT_MD5_UPDATE = "update"; // recompute a valid md5
+    public static final String CONTENT_MD5_REMOVE = "remove"; // remove the header
+    public static final String CONTENT_MD5_IGNORE = "ignore"; // do nothing
+    public static final String CONTENT_MD5_DEFAULT = CONTENT_MD5_IGNORE;
+
     @Setter(AccessLevel.NONE)
-    double settingsVersion = 0.0;
+    double settingsVersion = SETTINGS_VERSION;
 
     @Since(0)
     @Builder.Default
@@ -62,11 +75,15 @@ public class ExtensionSettings {
 
     @Since(0)
     @Builder.Default
-    long presignedUrlLifetimeInSeconds = 900;
+    @NonFinal
+    @With
+    long presignedUrlLifetimeInSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
 
     @Since(0)
     @Builder.Default
-    String contentMD5HeaderBehavior = "ignore";
+    @NonFinal
+    @With
+    String contentMD5HeaderBehavior = CONTENT_MD5_IGNORE;
 
     @Since(0)
     @Builder.Default
