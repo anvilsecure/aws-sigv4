@@ -14,6 +14,8 @@ import java.io.IOException;
 public class AdvancedSettingsDialog extends JDialog {
 
     private static AdvancedSettingsDialog settingsDialog = null;
+    private JLabel statusLabel;
+    private static final String DEFAULT_STATUS_LABEL_TEXT = "<html><i>Ok to submit</i></html>";
 
     protected final JCheckBox signingEnabledForProxyCheckbox = new JCheckBox("Proxy");
     protected final JCheckBox signingEnabledForSpiderCheckBox = new JCheckBox("Spider");
@@ -24,6 +26,7 @@ public class AdvancedSettingsDialog extends JDialog {
     protected final JCheckBox signingEnabledForExtenderCheckBox = new JCheckBox("Extender");
 
     @Getter private long presignedUrlLifetimeSeconds = ExtensionSettings.PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
+    private JTextField presignedUrlLifetimeTextField = new JTextField(Long.toString(ExtensionSettings.PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS), 5);
 
     protected final JCheckBox preserveHeaderOrderCheckBox = new JCheckBox("Preserve Header Order");
     private final JComboBox<String> contentMD5HeaderBehaviorComboBox = new JComboBox<>();
@@ -64,6 +67,8 @@ public class AdvancedSettingsDialog extends JDialog {
         contentMD5HeaderBehaviorComboBox.setSelectedItem(ExtensionSettings.CONTENT_MD5_DEFAULT);
         miscComboBoxPanel.add(new JLabel("ContentMD5 Header Behavior"));
         miscComboBoxPanel.add(contentMD5HeaderBehaviorComboBox);
+        miscComboBoxPanel.add(new JLabel("Presigned URL Lifetime Seconds"));
+        miscComboBoxPanel.add(presignedUrlLifetimeTextField);
 
         JPanel miscCheckBoxPanel = new JPanel();
         miscCheckBoxPanel.add(preserveHeaderOrderCheckBox);
@@ -163,10 +168,26 @@ public class AdvancedSettingsDialog extends JDialog {
         c02.anchor = GridBagConstraints.LINE_START;
         outerPanel.add(importExportPanel, c02);
 
+        // status message
+        statusLabel = new JLabel(DEFAULT_STATUS_LABEL_TEXT);
+        statusLabel.setForeground(BurpExtender.textOrange);
+        GridBagConstraints c04 = new GridBagConstraints();
+        c04.gridx = 0;
+        c04.gridy = outerPanelY++;
+        c04.anchor = GridBagConstraints.CENTER;
+        outerPanel.add(statusLabel, c04);
+
         JPanel lowerButtonPanel = new JPanel();
         JButton okButton = new JButton("Ok");
         okButton.addActionListener(actionEvent -> {
-            setVisible(false);
+            try {
+                validateSettings();
+                setVisible(false);
+                statusLabel.setText(DEFAULT_STATUS_LABEL_TEXT);
+            } catch (IllegalArgumentException e) {
+                statusLabel.setText(BurpExtender.formatMessageHtml(e.getMessage()));
+            }
+            pack();
         });
         lowerButtonPanel.add(okButton);
         GridBagConstraints c01 = new GridBagConstraints();
@@ -177,6 +198,26 @@ public class AdvancedSettingsDialog extends JDialog {
 
         add(outerPanel);
         pack();
+    }
+
+    // Validate settings updated in this dialog only. This dialog is initialized with values that should have already
+    // been validated.
+    //
+    // Note that settings which require validation are not saved until validation succeeds ("Ok" button is pressed
+    // and dialog disappears). Other settings take effect immediately (all check boxes and combo boxes).
+    private void validateSettings() {
+        long lifetime;
+        try {
+            lifetime = Long.parseLong(presignedUrlLifetimeTextField.getText());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Expected an integer for presigned URL lifetime");
+        }
+
+        if (lifetime < ExtensionSettings.PRESIGNED_URL_LIFETIME_MIN_SECONDS || lifetime > ExtensionSettings.PRESIGNED_URL_LIFETIME_MAX_SECONDS) {
+            throw new IllegalArgumentException(String.format("Presigned URL lifetime must be between %d and %d, inclusive",
+                    ExtensionSettings.PRESIGNED_URL_LIFETIME_MIN_SECONDS, ExtensionSettings.PRESIGNED_URL_LIFETIME_MAX_SECONDS));
+        }
+        presignedUrlLifetimeSeconds = lifetime;
     }
 
     public void applyExtensionSettings(final ExtensionSettings settings) {
@@ -195,7 +236,9 @@ public class AdvancedSettingsDialog extends JDialog {
 
     // recenter the dialog every time
     public void setVisible(final boolean visible) {
-        setLocationRelativeTo(BurpExtender.getBurp().getUiComponent());
+        if (visible) {
+            setLocationRelativeTo(BurpExtender.getBurp().getUiComponent());
+        }
         super.setVisible(visible);
     }
 
