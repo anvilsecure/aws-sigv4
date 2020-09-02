@@ -1347,6 +1347,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         // signer will add these headers and may complain if they're already present
         signedHeaderMap.remove("x-amz-date"); // all signed requests have this
+        signedHeaderMap.remove("x-amz-security-token");
 
         final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);
         SdkHttpFullRequest.Builder awsRequestBuilder = SdkHttpFullRequest.builder()
