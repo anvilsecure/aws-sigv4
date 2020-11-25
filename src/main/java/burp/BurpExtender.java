@@ -51,7 +51,7 @@ import java.util.stream.Stream;
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     // make sure to update version in build.gradle as well
-    private static final String EXTENSION_VERSION = "0.2.4";
+    private static final String EXTENSION_VERSION = "0.2.5";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
     private static final String SETTING_VERSION = "ExtensionVersion";
@@ -604,7 +604,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .signingEnabledForIntruder(advancedSettingsDialog.signingEnabledForIntruderCheckBox.isSelected())
                 .signingEnabledForRepeater(advancedSettingsDialog.signingEnabledForRepeaterCheckBox.isSelected())
                 .signingEnabledForSequencer(advancedSettingsDialog.signingEnabledForSequencerCheckBox.isSelected())
-                .signingEnabledForExtender(advancedSettingsDialog.signingEnabledForExtenderCheckBox.isSelected());
+                .signingEnabledForExtender(advancedSettingsDialog.signingEnabledForExtenderCheckBox.isSelected())
+                .addProfileComment(advancedSettingsDialog.addProfileCommentCheckBox.isSelected());
         if (this.persistProfilesCheckBox.isSelected()) {
             builder.profiles(this.profileNameMap);
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
@@ -622,7 +623,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         double settingsVersion = 0.0;
         try {
-            settingsVersion = Integer.parseInt(callbacks.loadExtensionSetting(SETTING_CONFIG_VERSION));
+            settingsVersion = Double.parseDouble(callbacks.loadExtensionSetting(SETTING_CONFIG_VERSION));
         } catch (NumberFormatException ignored) {
         }
 
@@ -672,6 +673,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         // save these with their own key since they may be required before the other settings are loaded
         this.callbacks.saveExtensionSetting(SETTING_LOG_LEVEL, Integer.toString(this.logger.getLevel()));
         this.callbacks.saveExtensionSetting(SETTING_VERSION, EXTENSION_VERSION);
+        this.callbacks.saveExtensionSetting(SETTING_CONFIG_VERSION, Double.toString(ExtensionSettings.SETTINGS_VERSION));
         this.callbacks.saveExtensionSetting(BURP_SETTINGS_KEY, exportExtensionSettingsToJson());
     }
 
@@ -1579,7 +1581,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 final byte[] requestBytes = signRequest(messageInfo.getHttpService(), messageInfo.getRequest(), signingProfile);
                 if (requestBytes != null) {
                     messageInfo.setRequest(requestBytes);
-                    messageInfo.setComment(DISPLAY_NAME+" "+signingProfile.getName());
+                    if (advancedSettingsDialog.addProfileCommentCheckBox.isSelected()) {
+                        final String comment = messageInfo.getComment();
+                        if (StringUtils.isEmpty(comment)) {
+                            messageInfo.setComment(String.format("%s %s", DISPLAY_NAME, signingProfile.getName()));
+                        } else {
+                            messageInfo.setComment(String.format("%s %s %s", DISPLAY_NAME, signingProfile.getName(), comment));
+                        }
+                    }
                 }
                 else {
                     callbacks.issueAlert(String.format("Failed to sign with profile \"%s\". See Extender log for details.", signingProfile.getName()));
