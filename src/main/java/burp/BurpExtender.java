@@ -1226,6 +1226,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         Set<String> signedHeaderSet = getAdditionalSignedHeadersFromUI().stream().map(String::toLowerCase).collect(Collectors.toSet());
         signedHeaderSet.add("host"); // always require host header. aws sdk should already handle this.
 
+        // Parse the authorization header for region, service, and signed header names.
         for (final String header : request.getHeaders()) {
             Matcher matcher = authorizationHeaderRegex.matcher(header);
             if (matcher.matches()) {
@@ -1350,6 +1351,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         // signer will add these headers and may complain if they're already present
         signedHeaderMap.remove("x-amz-date"); // all signed requests have this
         signedHeaderMap.remove("x-amz-security-token");
+        signedHeaderMap.remove("host");
 
         final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);
         SdkHttpFullRequest.Builder awsRequestBuilder = SdkHttpFullRequest.builder()
