@@ -51,7 +51,7 @@ import java.util.stream.Stream;
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     // make sure to update version in build.gradle as well
-    private static final String EXTENSION_VERSION = "0.2.5";
+    private static final String EXTENSION_VERSION = "0.2.6";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
     private static final String SETTING_VERSION = "ExtensionVersion";
@@ -622,9 +622,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
 
         double settingsVersion = 0.0;
-        try {
-            settingsVersion = Double.parseDouble(callbacks.loadExtensionSetting(SETTING_CONFIG_VERSION));
-        } catch (NumberFormatException ignored) {
+        final String setting = callbacks.loadExtensionSetting(SETTING_CONFIG_VERSION);
+        if (StringUtils.isNotEmpty(setting)) {
+            try {
+                settingsVersion = Double.parseDouble(setting);
+            } catch (NumberFormatException ignored) {
+            }
         }
 
         ExtensionSettings settings;
