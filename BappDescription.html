@@ -1,0 +1,15 @@
+<p>This is a Burp extension for signing AWS requests with SigV4. Signature Version 4 is a process to add authentication information to AWS HTTP requests. More information can be found <a href="https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html">here</a></p>
+
+<p>SigV4 uses a timestamp to give signatures a limited lifetime. When using tools like Burp repeater, this plugin will automatically compute a new signature with the current timestamp. You can also repeat requests using different AWS credentials.</p>
+
+<p>Features:</p>
+
+<ul>
+	<li>Credentials can be imported from a file or environment variables.</li>
+	<li>Automatically select a profile based on the key id in the request.</li>
+	<li>Resend requests with different credentials.</li>
+	<li>Context menu item for copying s3 presigned URLs.</li>
+	<li>Assume a role by providing a role ARN and optional external ID.</li>
+</ul>
+
+<p>For more information check out the <a href="https://github.com/anvilsecure/aws-sigv4/">README</a></p>
