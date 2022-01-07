@@ -51,7 +51,7 @@ import java.util.stream.Stream;
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     // make sure to update version in build.gradle as well
-    private static final String EXTENSION_VERSION = "0.2.6";
+    private static final String EXTENSION_VERSION = "0.2.7";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
     private static final String SETTING_VERSION = "ExtensionVersion";
@@ -1362,12 +1362,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .uri(uri)
                 .method(SdkHttpMethod.fromValue(request.getMethod()))
                 .contentStreamProvider(() -> new ByteArrayInputStream(body));
-        // add query string params as these are not captured by builder uri
-        request.getParameters().forEach(p -> {
-            if (p.getType() == IParameter.PARAM_URL) {
-                awsRequestBuilder.appendRawQueryParameter(helpers.urlDecode(p.getName()), helpers.urlDecode(p.getValue()));
-            }
-        });
 
         final SdkHttpFullRequest awsRequest = awsRequestBuilder.build();
 
