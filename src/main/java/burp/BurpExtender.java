@@ -2,7 +2,6 @@ package burp;
 
 import burp.error.SigCredentialProviderException;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.text.StringEscapeUtils;
 import com.google.gson.*;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
@@ -152,7 +151,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c03 = new GridBagConstraints(); c03.anchor = GridBagConstraints.FIRST_LINE_START; c03.gridy = 3;
 
         globalSettingsPanel.add(settingsLabel, c00);
-        globalSettingsPanel.add(new JLabel("<html>Change plugin behavior. Set <i>Default Profile</i> to force signing of all requests with the specified profile credentials."), c01);
+        globalSettingsPanel.add(new JLabel("Change plugin behavior. Set \"Default Profile\" to force signing of all requests with the specified profile credentials."), c01);
         globalSettingsPanel.add(checkBoxPanel, c02);
         globalSettingsPanel.add(otherSettingsPanel, c03);
 
@@ -203,7 +202,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c002 = new GridBagConstraints(); c002.gridy = 2; c002.gridx = 0; c002.anchor = GridBagConstraints.FIRST_LINE_START;
         GridBagConstraints c003 = new GridBagConstraints(); c003.gridy = 2; c003.gridx = 1; c003.anchor = GridBagConstraints.FIRST_LINE_START;
         profilePanel.add(profileLabel, c000);
-        profilePanel.add(new JLabel("<html>Add AWS credentials using your <i>aws_access_key_id</i> and <i>aws_secret_access_key</i>.</html>"), c001);
+        profilePanel.add(new JLabel("Add AWS credentials using your \"aws_access_key_id\" and \"aws_secret_access_key\"."), c001);
         profilePanel.add(profileButtonPanel, c002);
         profilePanel.add(profileScrollPane, c003);
 
@@ -371,8 +370,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             JDialog dialog = new SigProfileTestDialog(null, profile, false, response);
                             dialog.setVisible(true);
                         } catch (SigCredentialProviderException | StsException exc) {
+                            // TODO: line wrap
                             JOptionPane.showMessageDialog(getUiComponent(),
-                                    formatMessageHtml(exc.getMessage()),
+                                    exc.getMessage(),
                                     "Test Failed: "+profile.getName(),
                                     JOptionPane.ERROR_MESSAGE);
                         }
@@ -413,7 +413,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     }
                     int exportCount = SigProfile.exportToFilePath(sigProfiles, exportPath);
                     final String msg = String.format("Exported %d profiles to %s", exportCount, exportPath);
-                    JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml(msg));
+                    // TODO: line wrap
+                    JOptionPane.showMessageDialog(getUiComponent(), msg);
                     logger.info(msg);
                 }
             }
@@ -506,13 +507,6 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         if (this.logLevelComboBox != null) {
             this.logLevelComboBox.setSelectedIndex(logger.getLevel());
         }
-    }
-
-    // format a message for display in a dialog. applies reasonable word-wrapping.
-    public static String formatMessageHtml(final String msg) {
-        return "<html><p style='width: 300px;'>" +
-                StringEscapeUtils.escapeHtml4(msg) +
-                "</p></html>";
     }
 
     @Override
@@ -729,7 +723,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JMenu menu = new JMenu(DISPLAY_NAME);
 
         // add disable item
-        JRadioButtonMenuItem item = new JRadioButtonMenuItem("<html><i>Disabled</i></html>", !isSigningEnabled());
+        JRadioButtonMenuItem item = new JRadioButtonMenuItem("Disabled", !isSigningEnabled());
+        Font defaultFont = item.getFont();
+        item.setFont(new Font(defaultFont.getFamily(), Font.ITALIC, defaultFont.getSize()));
         item.addActionListener(new ActionListener()
         {
             @Override
@@ -795,7 +791,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                             if (profile == null) {
                                 final String msg = "Failed to determine signing profile for presigned URL";
                                 logger.error(msg);
-                                JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml(msg));
+                                JOptionPane.showMessageDialog(getUiComponent(), msg);
                             }
                             else {
                                 signedUrl = presignRequest(messages[0].getHttpService(), messages[0].getRequest(), profile, advancedSettingsDialog.getPresignedUrlLifetimeSeconds()).toString();
@@ -821,7 +817,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                 SigProfile profile = profileNameMap.get(profileName);
                                 if (profile == null) {
                                     // this should never happen since the menu is populated with existing profile names
-                                    JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml("Profile name does not exist: "+profileName));
+                                    JOptionPane.showMessageDialog(getUiComponent(), "Profile name does not exist: "+profileName);
                                     return;
                                 }
                                 // if region or service is missing from profile, prompt user
@@ -872,7 +868,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                         final byte[] body = Arrays.copyOfRange(messages[0].getRequest(), requestInfo.getBodyOffset(), messages[0].getRequest().length);
                                         messages[0].setRequest(helpers.buildHttpMessage(allHeaders, body));
                                     } catch (IllegalArgumentException | NullPointerException exc) {
-                                        JOptionPane.showMessageDialog(getUiComponent(), formatMessageHtml("Failed to add signature: " + exc.getMessage()));
+                                        // TODO: line wrap
+                                        JOptionPane.showMessageDialog(getUiComponent(), "Failed to add signature: " + exc.getMessage());
                                     }
                                 })).start();
                             }

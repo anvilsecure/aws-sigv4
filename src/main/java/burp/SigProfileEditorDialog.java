@@ -37,7 +37,7 @@ public class SigProfileEditorDialog extends JDialog
     private JRadioButton httpProviderRadioButton;
     private JTextField httpProviderUrlField;
 
-    private JLabel statusLabel;
+    private MultilineLabel statusLabel;
     private String newProfileName = null;
 
     // allow creator of dialog to get the profile that was created
@@ -152,7 +152,9 @@ public class SigProfileEditorDialog extends JDialog
         providerPanel.add(httpPanel, newConstraint(0, providerPanelY++, GridBagConstraints.LINE_START));
 
         outerPanel.add(providerPanel, newConstraint(0, outerPanelY++, GridBagConstraints.LINE_START));
-        statusLabel = new JLabel("<html><i>Ok to submit</i></html>");
+        statusLabel = new MultilineLabel("Ok to submit");
+        Font defaultFont = statusLabel.getFont();
+        statusLabel.setFont(new Font(defaultFont.getFamily(), Font.ITALIC, defaultFont.getSize()));
         statusLabel.setForeground(BurpExtender.textOrange);
         okButton = new JButton("Ok");
         JButton cancelButton = new JButton("Cancel");
@@ -255,7 +257,7 @@ public class SigProfileEditorDialog extends JDialog
 
     protected void setStatusLabel(final String message)
     {
-        statusLabel.setText(BurpExtender.formatMessageHtml(message));
+        statusLabel.setText(message);
         pack();
     }
 

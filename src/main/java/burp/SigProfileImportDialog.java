@@ -1,7 +1,5 @@
 package burp;
 
-import org.apache.commons.text.StringEscapeUtils;
-
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
@@ -161,7 +159,7 @@ public class SigProfileImportDialog extends JDialog
                 try {
                     addSelectedProfiles();
                 } catch (IllegalArgumentException exc) {
-                    hintLabel.setText(String.format("<html><i>%s</i></html>", StringEscapeUtils.escapeHtml4(exc.getMessage())));
+                    hintLabel.setText(exc.getMessage());
                     return;
                 }
                 setVisible(false);
@@ -186,7 +184,9 @@ public class SigProfileImportDialog extends JDialog
         c02.gridy = 2;
         GridBagConstraints c03 = new GridBagConstraints();
         c03.gridy = 3;
-        hintLabel = new JLabel("<html><i>Ok to import selected profiles</i></html>");
+        hintLabel = new JLabel("Ok to import selected profiles");
+        Font defaultFont = hintLabel.getFont();
+        hintLabel.setFont(new Font(defaultFont.getFamily(), Font.ITALIC, defaultFont.getSize()));
         hintLabel.setForeground(BurpExtender.textOrange);
         outerPanel.add(topButtonPanel, c00);
         outerPanel.add(profileScrollPane, c01);
@@ -285,6 +285,6 @@ public class SigProfileImportDialog extends JDialog
         if (profile != null) {
             profiles.add(profile);
         }
-        updateImportTable(profiles, "<html><i>environment</i></html>");
+        updateImportTable(profiles, "**environment**");
     }
 }

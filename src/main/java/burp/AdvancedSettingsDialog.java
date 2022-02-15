@@ -15,7 +15,7 @@ public class AdvancedSettingsDialog extends JDialog {
 
     private static AdvancedSettingsDialog settingsDialog = null;
     private JLabel statusLabel;
-    private static final String DEFAULT_STATUS_LABEL_TEXT = "<html><i>Ok to submit</i></html>";
+    private static final String DEFAULT_STATUS_LABEL_TEXT = "Ok to submit";
 
     protected final JCheckBox signingEnabledForProxyCheckbox = new JCheckBox("Proxy");
     protected final JCheckBox signingEnabledForSpiderCheckBox = new JCheckBox("Spider");
@@ -172,6 +172,8 @@ public class AdvancedSettingsDialog extends JDialog {
 
         // status message
         statusLabel = new JLabel(DEFAULT_STATUS_LABEL_TEXT);
+        Font defaultFont = statusLabel.getFont();
+        statusLabel.setFont(new Font(defaultFont.getFamily(), Font.ITALIC, defaultFont.getSize()));
         statusLabel.setForeground(BurpExtender.textOrange);
         GridBagConstraints c04 = new GridBagConstraints();
         c04.gridx = 0;
@@ -187,7 +189,8 @@ public class AdvancedSettingsDialog extends JDialog {
                 setVisible(false);
                 statusLabel.setText(DEFAULT_STATUS_LABEL_TEXT);
             } catch (IllegalArgumentException e) {
-                statusLabel.setText(BurpExtender.formatMessageHtml(e.getMessage()));
+                // TODO: line wrap
+                statusLabel.setText(e.getMessage());
             }
             pack();
         });
