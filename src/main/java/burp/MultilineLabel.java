@@ -5,6 +5,8 @@ import javax.swing.*;
 /*
 Provides a JTextArea styled like a JLabel which handles multiline text.
 Text is not centered.
+
+Reference: https://stackoverflow.com/questions/26420428/how-to-word-wrap-text-in-jlabel
  */
 public class MultilineLabel extends JTextArea {
     private void init() {
