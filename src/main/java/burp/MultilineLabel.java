@@ -16,7 +16,7 @@ public class MultilineLabel extends JTextArea {
         setFocusable(false);
         setBackground(UIManager.getColor("Label.background"));
         setFont(UIManager.getFont("Label.font"));
-        setBorder(UIManager.getBorder("Label.font"));
+        setBorder(UIManager.getBorder("Label.border"));
         setColumns(35);
     }
     MultilineLabel(String text) {
