@@ -50,6 +50,7 @@ public class SigProfileEditorDialog extends JDialog
         c.gridx = gridx;
         c.gridwidth = gridwidth;
         c.gridheight = gridheight;
+        c.insets = new Insets(2, 2, 2, 2);
         return c;
     }
 
@@ -315,6 +316,7 @@ class JTextFieldHint extends JTextField implements FocusListener
     private Color defaultForegroundColor;
     final private Color hintForegroundColor = SigProfileEditorDialog.disabledColor;;
     private String hintText;
+    private boolean isHintSet = true;
 
     public JTextFieldHint(String content, int width, String hintText) {
         // set text below to prevent NullPointerException
@@ -336,7 +338,7 @@ class JTextFieldHint extends JTextField implements FocusListener
     @Override
     public String getText() {
         // make sure we don't return "Optional" when these fields are saved
-        if (getFont().isItalic()) {
+        if (isHintSet) {
             return "";
         }
         return super.getText();
@@ -354,18 +356,19 @@ class JTextFieldHint extends JTextField implements FocusListener
 
     protected void setHintText(final String text) {
         this.hintText = text;
-        if (getFont().isItalic()) {
+        if (isHintSet) {
             displayHintText();
         }
     }
 
     protected void displayHintText() {
-        setFont(new Font(defaultFont.getFamily(), Font.ITALIC, defaultFont.getSize()));
+        isHintSet = true;
         setForeground(hintForegroundColor);
         super.setText(hintText);
     }
 
     private void setUserText(final String text) {
+        isHintSet = false;
         setFont(defaultFont);
         setForeground(defaultForegroundColor);
         super.setText(text);
@@ -373,7 +376,7 @@ class JTextFieldHint extends JTextField implements FocusListener
 
     @Override
     public void focusGained(FocusEvent focusEvent) {
-        if (getFont().isItalic()) {
+        if (isHintSet) {
             setUserText("");
         }
     }
