@@ -176,7 +176,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         JButton testProfileButton = new JButton("Test");
         JButton importProfileButton = new JButton("Import");
         JButton exportProfileButton = new JButton("Export");
-        JPanel profileButtonPanel = new JPanel(new GridLayout(7, 1));
+
+        JPanel profileButtonPanel = new JPanel(new GridLayout(7, 1, 0, 5));
         profileButtonPanel.add(addProfileButton);
         profileButtonPanel.add(editProfileButton);
         profileButtonPanel.add(removeProfileButton);
@@ -199,7 +200,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         profileScrollPane.setPreferredSize(new Dimension(1000, 200));
         GridBagConstraints c000 = new GridBagConstraints(); c000.gridy = 0; c000.gridwidth = 2; c000.anchor = GridBagConstraints.FIRST_LINE_START;
         GridBagConstraints c001 = new GridBagConstraints(); c001.gridy = 1; c001.gridwidth = 2; c001.anchor = GridBagConstraints.FIRST_LINE_START; c001.insets = new Insets(10, 0, 10, 0);
-        GridBagConstraints c002 = new GridBagConstraints(); c002.gridy = 2; c002.gridx = 0; c002.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c002 = new GridBagConstraints(); c002.gridy = 2; c002.gridx = 0; c002.anchor = GridBagConstraints.FIRST_LINE_START; c002.insets = new Insets(0, 0, 0, 5);
         GridBagConstraints c003 = new GridBagConstraints(); c003.gridy = 2; c003.gridx = 1; c003.anchor = GridBagConstraints.FIRST_LINE_START;
         profilePanel.add(profileLabel, c000);
         profilePanel.add(new JLabel("Add AWS credentials using your \"aws_access_key_id\" and \"aws_secret_access_key\"."), c001);
@@ -216,7 +217,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         customHeadersOverwriteCheckbox = new JCheckBox("Overwrite existing headers");
         customHeadersOverwriteCheckbox.setToolTipText("Default behavior is to append these headers even if they exist in original request");
         JPanel customHeadersButtonPanel = new JPanel();
-        customHeadersButtonPanel.setLayout(new GridLayout(3, 1));
+        customHeadersButtonPanel.setLayout(new GridLayout(3, 1, 0, 5));
         JButton addCustomHeaderButton = new JButton("Add");
         JButton removeCustomHeaderButton = new JButton("Remove");
         customHeadersButtonPanel.add(addCustomHeaderButton);
@@ -230,7 +231,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         GridBagConstraints c100 = new GridBagConstraints(); c100.gridy = 0; c100.gridwidth = 2; c100.anchor = GridBagConstraints.FIRST_LINE_START;
         GridBagConstraints c101 = new GridBagConstraints(); c101.gridy = 1; c101.gridwidth = 2; c101.anchor = GridBagConstraints.FIRST_LINE_START; c101.insets = new Insets(10, 0, 10, 0);
         GridBagConstraints c102 = new GridBagConstraints(); c102.gridy = 2; c102.gridx = 1; c102.anchor = GridBagConstraints.FIRST_LINE_START;
-        GridBagConstraints c103 = new GridBagConstraints(); c103.gridy = 3; c103.gridx = 0; c103.anchor = GridBagConstraints.FIRST_LINE_START;
+        GridBagConstraints c103 = new GridBagConstraints(); c103.gridy = 3; c103.gridx = 0; c103.anchor = GridBagConstraints.FIRST_LINE_START; c103.insets = new Insets(0, 0, 0, 5);
         GridBagConstraints c104 = new GridBagConstraints(); c104.gridy = 3; c104.gridx = 1; c104.anchor = GridBagConstraints.FIRST_LINE_START;
         customHeadersPanel.add(customHeadersLabel, c100);
         customHeadersPanel.add(new JLabel("Add request headers to be included in the signature. These can be edited in place."), c101);
