@@ -593,6 +593,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .preserveHeaderOrder(this.advancedSettingsDialog.preserveHeaderOrderCheckBox.isSelected())
                 .presignedUrlLifetimeInSeconds(this.advancedSettingsDialog.getPresignedUrlLifetimeSeconds())
                 .contentMD5HeaderBehavior(this.advancedSettingsDialog.getContentMD5HeaderBehavior())
+                .signingEnabledForProxy(advancedSettingsDialog.signingEnabledForProxyCheckbox.isSelected())
                 .signingEnabledForSpider(advancedSettingsDialog.signingEnabledForSpiderCheckBox.isSelected())
                 .signingEnabledForScanner(advancedSettingsDialog.signingEnabledForScannerCheckBox.isSelected())
                 .signingEnabledForIntruder(advancedSettingsDialog.signingEnabledForIntruderCheckBox.isSelected())
