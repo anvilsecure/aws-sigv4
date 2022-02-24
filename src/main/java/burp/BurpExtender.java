@@ -1006,7 +1006,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         for (final String name : getSortedProfileNames()) {
             SigProfile profile = this.profileNameMap.get(name);
-            model.addRow(new Object[]{profile.getName(), profile.getAccessKeyIdForProfileSelection(), profile.getActiveProvider().getName(), profile.getRegion(), profile.getService()});
+            final String activeProviderName = (profile.getActiveProvider() != null) ? profile.getActiveProvider().getName() : "";
+            model.addRow(new Object[]{profile.getName(), profile.getAccessKeyIdForProfileSelection(), activeProviderName, profile.getRegion(), profile.getService()});
             defaultProfileComboBox.addItem(name);
         }
         setDefaultProfileName(defaultProfileName);
