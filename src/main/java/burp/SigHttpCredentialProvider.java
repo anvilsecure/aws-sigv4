@@ -73,10 +73,21 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
         SigCredential newCredential = null;
         byte[] response;
         try {
+            byte[] request = helpers.buildHttpRequest(requestUri.toURL());
+            // If the configured URL includes username and password,
+            // they will be used when fetching credentials.
+            if (requestUri.getUserInfo() != ""){
+                IRequestInfo rqInfo = helpers.analyzeRequest(request);
+                java.util.List<java.lang.String> headers = rqInfo.getHeaders();
+                headers.add("Authorization: Basic " + helpers.base64Encode(requestUri.getUserInfo()));
+                String tempReq = new String(request);
+                String messageBody = tempReq.substring(rqInfo.getBodyOffset());
+                request = helpers.buildHttpMessage(headers, messageBody.getBytes());
+            }
             response = callbacks.makeHttpRequest(requestUri.getHost(),
                     requestUri.getPort(),
                     requestUri.getScheme().equalsIgnoreCase("https"),
-                    helpers.buildHttpRequest(requestUri.toURL()));
+                    request);
         } catch (MalformedURLException | IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid URL for HttpGet: "+requestUri);
         }
