@@ -50,7 +50,7 @@ import java.util.stream.Stream;
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     // make sure to update version in build.gradle as well
-    private static final String EXTENSION_VERSION = "0.2.7";
+    private static final String EXTENSION_VERSION = "0.2.8";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
     private static final String SETTING_VERSION = "ExtensionVersion";
@@ -601,7 +601,8 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .signingEnabledForRepeater(advancedSettingsDialog.signingEnabledForRepeaterCheckBox.isSelected())
                 .signingEnabledForSequencer(advancedSettingsDialog.signingEnabledForSequencerCheckBox.isSelected())
                 .signingEnabledForExtender(advancedSettingsDialog.signingEnabledForExtenderCheckBox.isSelected())
-                .addProfileComment(advancedSettingsDialog.addProfileCommentCheckBox.isSelected());
+                .addProfileComment(advancedSettingsDialog.addProfileCommentCheckBox.isSelected())
+                .payloadSigningBehavior(advancedSettingsDialog.getPayloadSigningBehavior());
         if (this.persistProfilesCheckBox.isSelected()) {
             builder.profiles(this.profileNameMap);
             logger.info(String.format("Saved %d profile(s)", this.profileNameMap.size()));
@@ -659,11 +660,16 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             settings = settings.withPresignedUrlLifetimeInSeconds(ExtensionSettings.PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS);
         }
 
-        final String behavior = settings.contentMD5HeaderBehavior();
-        if (!Arrays.asList(ExtensionSettings.CONTENT_MD5_REMOVE, ExtensionSettings.CONTENT_MD5_IGNORE, ExtensionSettings.CONTENT_MD5_UPDATE).contains(behavior)) {
+        final String md5HeaderBehavior = settings.contentMD5HeaderBehavior();
+        if (!Arrays.asList(ExtensionSettings.CONTENT_MD5_REMOVE, ExtensionSettings.CONTENT_MD5_IGNORE, ExtensionSettings.CONTENT_MD5_UPDATE).contains(md5HeaderBehavior)) {
             settings = settings.withContentMD5HeaderBehavior(ExtensionSettings.CONTENT_MD5_DEFAULT);
         }
 
+        final String payloadSigningBehavior = settings.payloadSigningBehavior();
+        if (!Arrays.asList(ExtensionSettings.PAYLOAD_SIGNING_ALL_SERVICES, ExtensionSettings.PAYLOAD_SIGNING_S3ONLY).contains(payloadSigningBehavior))
+        {
+            settings = settings.withPayloadSigningBehavior(ExtensionSettings.PAYLOAD_SIGNING_S3ONLY);
+        }
         advancedSettingsDialog.applyExtensionSettings(settings);
     }
 
@@ -1341,14 +1347,19 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             return null;
         }
 
-        // for s3, use payload signing if present in the original request. default to no signing
+        // Typically only S3 requests use payload signing. The `x-amz-content-sha256` header can be a valid hash of the request
+        // body or the value "UNSIGNED-PAYLOAD". However, this extension supports payload signing for any service. If
+        // the "all-services" option is set for "Payload Signing Options" in the advanced settings dialog, then any request with
+        // an `x-amz-content-sha256` header will be treated the same as S3.
         boolean signedPayload = false;
-        if (StringUtils.equalsIgnoreCase(service, "s3")) {
-            if (signedHeaderMap.containsKey("x-amz-content-sha256")) {
+        final boolean contentHashHeaderPresent = signedHeaderMap.containsKey("x-amz-content-sha256");
+        final boolean signPayloadForAnyService = advancedSettingsDialog.getPayloadSigningBehavior().equals(ExtensionSettings.PAYLOAD_SIGNING_ALL_SERVICES);
+        if (StringUtils.equalsIgnoreCase(service, "s3") || signPayloadForAnyService) {
+            if (contentHashHeaderPresent) {
                 signedPayload = !StringUtils.equalsIgnoreCase(signedHeaderMap.get("x-amz-content-sha256").get(0), "UNSIGNED-PAYLOAD");
+                // s3 signer may throw an error if this header is already present
+                signedHeaderMap.remove("x-amz-content-sha256");
             }
-            // s3 signer may throw an error if this header is already present
-            signedHeaderMap.remove("x-amz-content-sha256"); // s3 payload hash
         }
 
         // signer will add these headers and may complain if they're already present
@@ -1367,22 +1378,22 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
         // sign the request. can throw IllegalArgumentException
         SdkHttpFullRequest signedRequest;
-        if (StringUtils.equalsIgnoreCase(service, "s3")) {
+        if (StringUtils.equalsIgnoreCase(service, "s3") || (signPayloadForAnyService && contentHashHeaderPresent)) {
             AwsS3V4SignerParams signerParams = AwsS3V4SignerParams.builder()
                     .awsCredentials(awsCredentials)
                     .signingRegion(Region.of(region))
                     .signingName(service)
-                    .enablePayloadSigning(signedPayload)
                     .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
+                    .enablePayloadSigning(signedPayload)
                     .build();
             signedRequest = AwsS3V4Signer.create().sign(awsRequest, signerParams);
         }
         else {
             Aws4SignerParams signerParams = Aws4SignerParams.builder()
                     .awsCredentials(awsCredentials)
-                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
                     .signingRegion(Region.of(region))
                     .signingName(service)
+                    .doubleUrlEncode(shouldDoubleUrlEncodeForService(service))
                     .build();
             signedRequest = Aws4Signer.create().sign(awsRequest, signerParams);
         }

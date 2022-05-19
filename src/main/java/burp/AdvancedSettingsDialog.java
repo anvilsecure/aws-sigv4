@@ -31,9 +31,14 @@ public class AdvancedSettingsDialog extends JDialog {
     protected final JCheckBox preserveHeaderOrderCheckBox = new JCheckBox("Preserve Header Order");
     protected final JCheckBox addProfileCommentCheckBox = new JCheckBox("Add Profile Comment");
     private final JComboBox<String> contentMD5HeaderBehaviorComboBox = new JComboBox<>();
+    private final JComboBox<String> payloadSigningBehaviorComboBox = new JComboBox<>();
 
     public String getContentMD5HeaderBehavior() {
         return contentMD5HeaderBehaviorComboBox.getSelectedItem().toString();
+    }
+
+    public String getPayloadSigningBehavior() {
+        return payloadSigningBehaviorComboBox.getSelectedItem().toString();
     }
 
     private AdvancedSettingsDialog(Frame owner, String title, boolean modal) {
@@ -71,14 +76,23 @@ public class AdvancedSettingsDialog extends JDialog {
         miscComboBoxPanel.add(new JLabel("Presigned URL Lifetime Seconds"));
         miscComboBoxPanel.add(presignedUrlLifetimeTextField);
 
+        JPanel miscComboBoxPanel2 = new JPanel();
+        payloadSigningBehaviorComboBox.addItem(ExtensionSettings.PAYLOAD_SIGNING_ALL_SERVICES);
+        payloadSigningBehaviorComboBox.addItem(ExtensionSettings.PAYLOAD_SIGNING_S3ONLY);
+        payloadSigningBehaviorComboBox.setSelectedItem(ExtensionSettings.PAYLOAD_SIGNING_S3ONLY);
+        miscComboBoxPanel2.add(new JLabel("Payload Signing Behavior"));
+        miscComboBoxPanel2.add(payloadSigningBehaviorComboBox);
+
         JPanel miscCheckBoxPanel = new JPanel();
         miscCheckBoxPanel.add(preserveHeaderOrderCheckBox);
         miscCheckBoxPanel.add(addProfileCommentCheckBox);
 
         GridBagConstraints cm00 = new GridBagConstraints(); cm00.gridx = 0; cm00.gridy = miscPanelY++; cm00.anchor = GridBagConstraints.LINE_START;
         GridBagConstraints cm01 = new GridBagConstraints(); cm01.gridx = 0; cm01.gridy = miscPanelY++; cm01.anchor = GridBagConstraints.LINE_START;
+        GridBagConstraints cm02 = new GridBagConstraints(); cm02.gridx = 0; cm02.gridy = miscPanelY++; cm02.anchor = GridBagConstraints.LINE_START;
         miscPanel.add(miscComboBoxPanel, cm00);
-        miscPanel.add(miscCheckBoxPanel, cm01);
+        miscPanel.add(miscComboBoxPanel2, cm01);
+        miscPanel.add(miscCheckBoxPanel, cm02);
         GridBagConstraints c03 = new GridBagConstraints();
         c03.gridx = 0;
         c03.gridy = outerPanelY++;
@@ -238,6 +252,7 @@ public class AdvancedSettingsDialog extends JDialog {
         addProfileCommentCheckBox.setSelected(settings.addProfileComment());
         contentMD5HeaderBehaviorComboBox.setSelectedItem(settings.contentMD5HeaderBehavior());
         presignedUrlLifetimeSeconds = settings.presignedUrlLifetimeInSeconds();
+        payloadSigningBehaviorComboBox.setSelectedItem(settings.payloadSigningBehavior());
     }
 
     // recenter the dialog every time

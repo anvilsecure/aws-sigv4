@@ -2,7 +2,7 @@ plugins {
     id 'java-library'
 }
 
-version '0.2.7-all'
+version '0.2.8-all'
 
 compileJava.sourceCompatibility = JavaVersion.VERSION_11
 

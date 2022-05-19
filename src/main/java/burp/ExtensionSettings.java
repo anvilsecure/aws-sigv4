@@ -18,7 +18,7 @@ public class ExtensionSettings {
     // use this field to track settings version. when adding a new setting, bump this value
     // and annotate the new setting with @Since(x.y). when the extension loads an
     // old settings file, it will just use the defaults for new settings.
-    public static final double SETTINGS_VERSION = 0.1;
+    public static final double SETTINGS_VERSION = 0.2;
 
     // ref: https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
     public static final long PRESIGNED_URL_LIFETIME_MIN_SECONDS = 1;
@@ -29,6 +29,13 @@ public class ExtensionSettings {
     public static final String CONTENT_MD5_REMOVE = "remove"; // remove the header
     public static final String CONTENT_MD5_IGNORE = "ignore"; // do nothing
     public static final String CONTENT_MD5_DEFAULT = CONTENT_MD5_IGNORE;
+
+    // Inherit the behavior of the `x-amz-content-sha256` header in the original request.
+    // If absent, do not include it in the signed request. If it is "UNSIGNED-PAYLOAD", then
+    // do the same for the signed request. If it's a valid hash, compute a new hash and sign it.
+    public static final String PAYLOAD_SIGNING_ALL_SERVICES = "all-services";
+    // The default. Same behavior as above but only applies to S3 requests.
+    public static final String PAYLOAD_SIGNING_S3ONLY = "s3-only";
 
     @Setter(AccessLevel.NONE)
     double settingsVersion = SETTINGS_VERSION;
@@ -120,4 +127,10 @@ public class ExtensionSettings {
     @Since(0.1)
     @Builder.Default
     boolean addProfileComment = false;
+
+    @Since(0.2)
+    @Builder.Default
+    @NonFinal
+    @With
+    String payloadSigningBehavior = PAYLOAD_SIGNING_S3ONLY;
 }

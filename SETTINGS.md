@@ -28,6 +28,15 @@ if the request body changes. Note that CustomSignedHeaders are added after the
 Content-MD5 header is processed and so are not affected. If Content-MD5 is present,
 S3 requires it to be included in the signature.
 
+### PayloadSigningBehavior
+
+**UI name: Advanced -> Payload Signing Behavior**
+
+Takes 2 possible values that determine handling of the X-Amz-Content-Sha256 header:
+
+* `all-services` Compute X-Amz-Content-Sha256 if present in the original request and value is not "UNSIGNED-PAYLOAD".
+* `s3-only` Same as `all-services`, but only applies to S3 requests. This is the Default.
+
 ### CustomSignedHeaders
 
 **UI name: Custom Signed Headers**
