@@ -36,6 +36,7 @@ public class SigProfileEditorDialog extends JDialog
     // Http provider
     private JRadioButton httpProviderRadioButton;
     private JTextField httpProviderUrlField;
+    private JTextField httpProviderHeaderField;
 
     private MultilineLabel statusLabel;
     private String newProfileName = null;
@@ -150,6 +151,9 @@ public class SigProfileEditorDialog extends JDialog
         httpPanel.add(new JLabel("GET Url"), newConstraint(0, 0, GridBagConstraints.LINE_START));
         this.httpProviderUrlField = new JTextFieldHint("", TEXT_FIELD_WIDTH-2, "Required");
         httpPanel.add(this.httpProviderUrlField, newConstraint(1, 0));
+        httpPanel.add(new JLabel("Header"), newConstraint(0, 1, GridBagConstraints.LINE_START));
+        httpProviderHeaderField = new JTextFieldHint("", TEXT_FIELD_WIDTH-2, "Optional");
+        httpPanel.add(httpProviderHeaderField, newConstraint(1, 1));
         providerPanel.add(httpPanel, newConstraint(0, providerPanelY++, GridBagConstraints.LINE_START));
 
         outerPanel.add(providerPanel, newConstraint(0, outerPanelY++, GridBagConstraints.LINE_START));
@@ -216,7 +220,7 @@ public class SigProfileEditorDialog extends JDialog
                     newProfileBuilder.withAccessKeyId(profileKeyIdTextField.getText());
 
                 if (!httpProviderUrlField.getText().equals("")) {
-                    newProfileBuilder.withCredentialProvider(new SigHttpCredentialProvider(httpProviderUrlField.getText()),
+                    newProfileBuilder.withCredentialProvider(new SigHttpCredentialProvider(httpProviderUrlField.getText(), httpProviderHeaderField.getText()),
                             httpProviderRadioButton.isSelected() ? SigProfile.DEFAULT_HTTP_PRIORITY : SigProfile.DISABLED_PRIORITY);
                 }
 
@@ -297,7 +301,8 @@ public class SigProfileEditorDialog extends JDialog
                 }
             }
             if (profile.getHttpCredentialProvider() != null) {
-                httpProviderUrlField.setText(profile.getHttpCredentialProvider().getUrl().toString());
+                httpProviderUrlField.setText(profile.getHttpCredentialProvider().getRequestUri().toString());
+                profile.getHttpCredentialProvider().getCustomHeader().ifPresent(s -> httpProviderHeaderField.setText(s));
                 if (profile.getHttpCredentialProviderPriority() >= 0) {
                     httpProviderRadioButton.doClick();
                 }

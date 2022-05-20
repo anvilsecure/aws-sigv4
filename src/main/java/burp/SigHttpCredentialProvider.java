@@ -4,6 +4,9 @@ import burp.error.SigCredentialProviderException;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
+import lombok.Getter;
+import org.apache.commons.lang3.StringUtils;
+
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -12,6 +15,8 @@ import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 
 public class SigHttpCredentialProvider implements SigCredentialProvider
 {
@@ -19,21 +24,26 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
     private static final IBurpExtenderCallbacks callbacks = BurpExtender.getBurp().callbacks;
     private static final IExtensionHelpers helpers = BurpExtender.getBurp().helpers;
 
+    @Getter
     private URI requestUri;
+    private List<String> customHeaders = List.of();
     private transient SigCredential credential;
 
-    public URI getUrl()
-    {
-        return requestUri;
+    public Optional<String> getCustomHeader() {
+        if (customHeaders.size() > 0) {
+            return Optional.of(customHeaders.get(0));
+        }
+        return Optional.empty();
     }
 
     private SigHttpCredentialProvider() {};
 
-    public SigHttpCredentialProvider(String url) {
-        init(url);
+    public SigHttpCredentialProvider(String url, String header) {
+        init(url, header);
     }
 
-    private void init(String url) {
+
+    private void init(String url, String header) {
         try {
             requestUri = new URL(url).toURI();
         } catch (MalformedURLException | URISyntaxException exc) {
@@ -42,6 +52,14 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
 
         if (!Arrays.asList("http", "https").contains(requestUri.getScheme())) {
             throw new IllegalArgumentException("Invalid protocol. Must be http(s)");
+        }
+
+        if (StringUtils.isNotEmpty(header)) {
+            String[] nameAndValue = BurpExtender.splitHeader(header);
+            if (nameAndValue[0].length() == 0) {
+                throw new IllegalArgumentException("Empty header");
+            }
+            customHeaders = List.of(nameAndValue[0] + ": " + nameAndValue[1]);
         }
     }
 
@@ -73,10 +91,13 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
         SigCredential newCredential = null;
         byte[] response;
         try {
+            IRequestInfo request = helpers.analyzeRequest(helpers.buildHttpRequest(requestUri.toURL()));
+            List<String> headers = request.getHeaders();
+            headers.addAll(customHeaders);
             response = callbacks.makeHttpRequest(requestUri.getHost(),
                     requestUri.getPort(),
                     requestUri.getScheme().equalsIgnoreCase("https"),
-                    helpers.buildHttpRequest(requestUri.toURL()));
+                    helpers.buildHttpMessage(headers, null));
         } catch (MalformedURLException | IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid URL for HttpGet: "+requestUri);
         }
