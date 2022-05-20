@@ -1,9 +1,6 @@
 package burp;
 
 import burp.error.SigCredentialProviderException;
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
 import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 
@@ -63,32 +60,13 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
         }
     }
 
-    private long expirationTimeToEpochSeconds(final String expiry) {
-        try {
-            return Long.parseLong(expiry);
-        } catch (NumberFormatException ignored) {
-
-        }
-
-        try {
-            return Instant.from(DateTimeFormatter.ISO_INSTANT.parse(expiry)).getEpochSecond();
-        } catch (DateTimeException ignored) {
-
-        }
-
-        throw new IllegalArgumentException("Failed to parse expiration timestamp");
-    }
-
     /*
     NOTE: Synchronization is intentionally omitted here for performance reasons. It is possible that 2 or more
     threads could refresh the credentials at the same time which is fine since a copy of valid credentials
     is always returned. For static credentials, synchronization is not desired at all. The http server is free to
     switch between static and temporary credentials for successive calls.
      */
-    private SigCredential renewCredential() throws SigCredentialProviderException
-    {
-        credential = null;
-        SigCredential newCredential = null;
+    private SigCredential renewCredential() throws SigCredentialProviderException {
         byte[] response;
         try {
             IRequestInfo request = helpers.analyzeRequest(helpers.buildHttpRequest(requestUri.toURL()));
@@ -99,11 +77,11 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
                     requestUri.getScheme().equalsIgnoreCase("https"),
                     helpers.buildHttpMessage(headers, null));
         } catch (MalformedURLException | IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid URL for HttpGet: "+requestUri);
+            throw new IllegalArgumentException("Invalid URL for HttpGet: " + requestUri);
         }
 
         if (response == null) {
-            throw new SigCredentialProviderException("Failed to get response from "+requestUri);
+            throw new SigCredentialProviderException("Failed to get response from " + requestUri);
         }
 
         IResponseInfo responseInfo = helpers.analyzeResponse(response);
@@ -111,25 +89,12 @@ public class SigHttpCredentialProvider implements SigCredentialProvider
             throw new SigCredentialProviderException(String.format("GET request returned error: %d %s", responseInfo.getStatusCode(), requestUri));
         final String responseBody = helpers.bytesToString(Arrays.copyOfRange(response, responseInfo.getBodyOffset(), response.length));
 
-        try {
-            // expect similar object to sts:AssumeRole
-            JsonObject credentialObject = new Gson().fromJson(responseBody, JsonObject.class);
-            if (credentialObject.has("SessionToken")) {
-                newCredential = new SigTemporaryCredential(
-                        credentialObject.get("AccessKeyId").getAsString(),
-                        credentialObject.get("SecretAccessKey").getAsString(),
-                        credentialObject.get("SessionToken").getAsString(),
-                        expirationTimeToEpochSeconds(credentialObject.get("Expiration").getAsString()));
-            } else {
-                newCredential = new SigStaticCredential(
-                        credentialObject.get("AccessKeyId").getAsString(),
-                        credentialObject.get("SecretAccessKey").getAsString());
-            }
-        } catch (JsonParseException | NullPointerException | IllegalArgumentException exc) {
+        // expect similar object to sts:AssumeRole
+        Optional<SigProfile> profile = JSONCredentialParser.profileFromAssumeRoleJSON(responseBody);
+        if (profile.isEmpty()) {
             throw new SigCredentialProviderException("Failed to parse HttpProvider response");
         }
-        credential = newCredential;
-        return newCredential;
+        return profile.get().getCredential();
     }
 
     @Override
