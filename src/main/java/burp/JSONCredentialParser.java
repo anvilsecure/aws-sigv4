@@ -64,14 +64,12 @@ public class JSONCredentialParser {
         // Try to parse as Cognito.
         // See https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_GetCredentialsForIdentity.html#API_GetCredentialsForIdentity_ResponseSyntax
         try {
-
             JsonObject jsonObject = new Gson().fromJson(jsonText, JsonObject.class);
             // If this is from Cognito, we may have an IdentityId to use as the profile name.
             String profileName = null;
             if (jsonObject.get("IdentityId") != null) {
                 profileName = jsonObject.get("IdentityId").getAsString();
             }
-            // Cognito wraps
             if (jsonObject.get("Credentials") != null) {
                 jsonObject = jsonObject.get("Credentials").getAsJsonObject();
             }

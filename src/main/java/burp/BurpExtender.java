@@ -935,32 +935,35 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     });
                     list.add(editSignatureItem);
                 }
+                break;
             case IContextMenuInvocation.CONTEXT_MESSAGE_VIEWER_RESPONSE:
+                final IHttpRequestResponse[] selectedMessages = invocation.getSelectedMessages();
+                if (selectedMessages == null || selectedMessages.length < 1) {
+                    break;
+                }
                 final int[] bounds = invocation.getSelectionBounds();
-                if (invocation.getSelectedMessages().length > 0 && (bounds != null) && (bounds[1] - bounds[0] < 90)) {
+                if (bounds == null || (bounds[1] - bounds[0] < 90)) {
                     // expect at least 90 chars for API credentials with a key id and secret.
                     break;
                 }
                 JMenuItem importItem = new JMenuItem("Import Selected Credential");
                 importItem.addActionListener(actionEvent -> {
-                    IHttpRequestResponse[] selectedMessages = invocation.getSelectedMessages();
-                    if (selectedMessages.length > 0 && (bounds != null) && (bounds[1] - bounds[0] > 90)) {
-                        final byte[] selection = Arrays.copyOfRange(selectedMessages[0].getResponse(), bounds[0], bounds[1]);
-                        try {
-                            Optional<SigProfile> profile = JSONCredentialParser.profileFromJSON(new String(selection));
-                            if (profile.isPresent()) {
-                                SigProfileEditorDialog dialog = new SigProfileEditorDialog(null, "Import Credential", true, null);
-                                dialog.applyProfile(profile.get());
-                                dialog.setVisible(true);
-                            } else {
-                                logger.error("Invalid JSON credentials object");
-                            }
-                        } catch (JsonSyntaxException e) {
+                    final byte[] selection = Arrays.copyOfRange(selectedMessages[0].getResponse(), bounds[0], bounds[1]);
+                    try {
+                        Optional<SigProfile> profile = JSONCredentialParser.profileFromJSON(new String(selection));
+                        if (profile.isPresent()) {
+                            SigProfileEditorDialog dialog = new SigProfileEditorDialog(null, "Import Credential", true, null);
+                            dialog.applyProfile(profile.get());
+                            dialog.setVisible(true);
+                        } else {
                             logger.error("Invalid JSON credentials object");
                         }
+                    } catch (JsonSyntaxException e) {
+                        logger.error("Invalid JSON credentials object");
                     }
                 });
                 list.add(importItem);
+                break;
         }
         return list;
     }
