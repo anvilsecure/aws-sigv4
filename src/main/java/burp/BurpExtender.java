@@ -722,7 +722,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
     @Override
     public List<JMenuItem> createMenuItems(IContextMenuInvocation invocation)
     {
-        JMenu menu = new JMenu(DISPLAY_NAME);
+        JMenu menu = new JMenu("Default Profile");
 
         // add disable item
         JRadioButtonMenuItem item = new JRadioButtonMenuItem("Disabled", !isSigningEnabled());
@@ -935,6 +935,32 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                     });
                     list.add(editSignatureItem);
                 }
+            case IContextMenuInvocation.CONTEXT_MESSAGE_VIEWER_RESPONSE:
+                final int[] bounds = invocation.getSelectionBounds();
+                if (invocation.getSelectedMessages().length > 0 && (bounds != null) && (bounds[1] - bounds[0] < 90)) {
+                    // expect at least 90 chars for API credentials with a key id and secret.
+                    break;
+                }
+                JMenuItem importItem = new JMenuItem("Import Selected Credential");
+                importItem.addActionListener(actionEvent -> {
+                    IHttpRequestResponse[] selectedMessages = invocation.getSelectedMessages();
+                    if (selectedMessages.length > 0 && (bounds != null) && (bounds[1] - bounds[0] > 90)) {
+                        final byte[] selection = Arrays.copyOfRange(selectedMessages[0].getResponse(), bounds[0], bounds[1]);
+                        try {
+                            Optional<SigProfile> profile = JSONCredentialParser.profileFromJSON(new String(selection));
+                            if (profile.isPresent()) {
+                                SigProfileEditorDialog dialog = new SigProfileEditorDialog(null, "Import Credential", true, null);
+                                dialog.applyProfile(profile.get());
+                                dialog.setVisible(true);
+                            } else {
+                                logger.error("Invalid JSON credentials object");
+                            }
+                        } catch (JsonSyntaxException e) {
+                            logger.error("Invalid JSON credentials object");
+                        }
+                    }
+                });
+                list.add(importItem);
         }
         return list;
     }
