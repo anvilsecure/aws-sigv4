@@ -29,6 +29,7 @@ public class AdvancedSettingsDialog extends JDialog {
     private JTextField presignedUrlLifetimeTextField = new JTextField(Long.toString(ExtensionSettings.PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS), 5);
 
     protected final JCheckBox preserveHeaderOrderCheckBox = new JCheckBox("Preserve Header Order");
+    protected final JCheckBox updateContentSha256CheckBox = new JCheckBox("Update content-sha256 Header");
     protected final JCheckBox addProfileCommentCheckBox = new JCheckBox("Add Profile Comment");
     private final JComboBox<String> contentMD5HeaderBehaviorComboBox = new JComboBox<>();
 
@@ -73,6 +74,7 @@ public class AdvancedSettingsDialog extends JDialog {
 
         JPanel miscCheckBoxPanel = new JPanel();
         miscCheckBoxPanel.add(preserveHeaderOrderCheckBox);
+        miscCheckBoxPanel.add(updateContentSha256CheckBox);
         miscCheckBoxPanel.add(addProfileCommentCheckBox);
 
         GridBagConstraints cm00 = new GridBagConstraints(); cm00.gridx = 0; cm00.gridy = miscPanelY++; cm00.anchor = GridBagConstraints.LINE_START;
@@ -235,6 +237,7 @@ public class AdvancedSettingsDialog extends JDialog {
         signingEnabledForExtenderCheckBox.setSelected(settings.signingEnabledForExtender());
 
         preserveHeaderOrderCheckBox.setSelected(settings.preserveHeaderOrder());
+        updateContentSha256CheckBox.setSelected(settings.updateContentSha256());
         addProfileCommentCheckBox.setSelected(settings.addProfileComment());
         contentMD5HeaderBehaviorComboBox.setSelectedItem(settings.contentMD5HeaderBehavior());
         presignedUrlLifetimeSeconds = settings.presignedUrlLifetimeInSeconds();

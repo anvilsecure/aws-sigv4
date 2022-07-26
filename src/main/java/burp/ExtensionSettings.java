@@ -75,6 +75,10 @@ public class ExtensionSettings {
 
     @Since(0)
     @Builder.Default
+    boolean updateContentSha256 = true;
+
+    @Since(0)
+    @Builder.Default
     @NonFinal
     @With
     long presignedUrlLifetimeInSeconds = PRESIGNED_URL_LIFETIME_DEFAULT_SECONDS;
