@@ -592,6 +592,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                 .additionalSignedHeaderNames(getAdditionalSignedHeadersFromUI())
                 .inScopeOnly(this.inScopeOnlyCheckBox.isSelected())
                 .preserveHeaderOrder(this.advancedSettingsDialog.preserveHeaderOrderCheckBox.isSelected())
+                .updateContentSha256(this.advancedSettingsDialog.updateContentSha256CheckBox.isSelected())
                 .presignedUrlLifetimeInSeconds(this.advancedSettingsDialog.getPresignedUrlLifetimeSeconds())
                 .contentMD5HeaderBehavior(this.advancedSettingsDialog.getContentMD5HeaderBehavior())
                 .signingEnabledForProxy(advancedSettingsDialog.signingEnabledForProxyCheckbox.isSelected())
@@ -1370,6 +1371,9 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             return null;
         }
 
+        // copy body, used later in mutiple places
+        final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);
+
         // for s3, use payload signing if present in the original request. default to no signing
         boolean signedPayload = false;
         if (StringUtils.equalsIgnoreCase(service, "s3")) {
@@ -1379,13 +1383,26 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             // s3 signer may throw an error if this header is already present
             signedHeaderMap.remove("x-amz-content-sha256"); // s3 payload hash
         }
+        // Support for x-amz-content-sha256 header for non-s3 services
+        else if ( advancedSettingsDialog.updateContentSha256CheckBox.isSelected() &&
+                signedHeaderMap.containsKey("x-amz-content-sha256")) {
+            try {
+                byte[] digest = MessageDigest.getInstance("SHA-256").digest( body);
+                Formatter digest_f = new Formatter();
+                for( byte b : digest )
+                    digest_f.format("%02x", b & 0xff);
+                signedHeaderMap.replace( "x-amz-content-sha256",
+                    Collections.singletonList( digest_f.toString()));
+            } catch( NoSuchAlgorithmException e){
+                logger.error( "SHA-256 Algorithm doesn't exist!!!");
+            }
+        }
 
         // signer will add these headers and may complain if they're already present
         signedHeaderMap.remove("x-amz-date"); // all signed requests have this
         signedHeaderMap.remove("x-amz-security-token");
         signedHeaderMap.remove("host");
 
-        final byte[] body = Arrays.copyOfRange(originalRequestBytes, request.getBodyOffset(), originalRequestBytes.length);
         SdkHttpFullRequest.Builder awsRequestBuilder = SdkHttpFullRequest.builder()
                 .headers(signedHeaderMap)
                 .uri(uri)
