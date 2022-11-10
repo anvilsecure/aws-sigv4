@@ -16,7 +16,7 @@ see https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-profiles.html
 public class ConfigParser
 {
     private static final Pattern sectionPattern = Pattern.compile("^\\s*\\[\\s*([^]]{1,256}?)\\s*\\]\\s*$");
-    private static final Pattern valuePattern = Pattern.compile("^\\s*([^=]{1,256}?)\\s*=\\s*(.{1,256}?)\\s*$");
+    private static final Pattern valuePattern = Pattern.compile("^\\s*([^=]{1,256}?)\\s*=\\s*(.{1,740}?)\\s*$");
 
     public static Map<String, Map<String, String>> parse(final Path path)
     {
