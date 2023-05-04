@@ -4,8 +4,12 @@ import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -54,9 +58,11 @@ public class SigProfileImportDialog extends JDialog
         JButton autoImportButton = new JButton("Auto");
         JButton chooseImportButton = new JButton("File");
         JButton envImportButton = new JButton("Env");
+        JButton shellImportButton = new JButton("Clipboard");
         importButtonPanel.add(autoImportButton);
         importButtonPanel.add(chooseImportButton);
         importButtonPanel.add(envImportButton);
+        importButtonPanel.add(shellImportButton);
 
         autoImportButton.addActionListener(new ActionListener() {
             @Override
@@ -83,6 +89,13 @@ public class SigProfileImportDialog extends JDialog
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
                 importProfilesFromEnvironment();
+            }
+        });
+
+        shellImportButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent actionEvent) {
+                importProfilesFromClipboard();
             }
         });
 
@@ -286,5 +299,22 @@ public class SigProfileImportDialog extends JDialog
             profiles.add(profile);
         }
         updateImportTable(profiles, "**environment**");
+    }
+
+    private void importProfilesFromClipboard()
+    {
+        // try to import creds from the clipboard. format should be one env var per line, as used by the aws cli.
+        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        String text;
+        try {
+            text =  (String)clipboard.getData(DataFlavor.stringFlavor);
+        } catch (IOException | UnsupportedFlavorException e) {
+            return;
+        }
+
+        SigProfile profile = SigProfile.fromShellVars(text);
+        if (profile != null) {
+            updateImportTable(List.of(profile), "**clipboard**");
+        }
     }
 }

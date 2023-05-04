@@ -10,6 +10,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /*
@@ -230,6 +231,54 @@ public class SigProfile implements Cloneable
                 }
                 return builder.build();
             }
+        }
+        return null;
+    }
+
+    // Extract profiles from text. Format should be one environment variable per line.
+    // Formatted such that it can be pasted into your shell and recognized by the AWS CLI.
+    public static SigProfile fromShellVars(final String text)
+    {
+        final var patterns = List.of(
+                Pattern.compile(".*(?<name>AWS_[A-Z_]+)[= ]\"?(?<value>\"?[a-zA-Z0-9/+]+={0,2})\"?[ ]*")
+        );
+        String keyId = null;
+        String keySecret = null;
+        String keySession = null;
+        String region = null;
+        for (String line : text.split("[\r\n;]+")) {
+            Optional<Matcher> matcher = patterns.stream().map(p -> p.matcher(line)).filter(Matcher::matches).findFirst();
+            if (matcher.isPresent()) {
+                final String value = matcher.get().group("value");
+                switch (matcher.get().group("name")) {
+                    case "AWS_ACCESS_KEY_ID":
+                        keyId = value;
+                        break;
+                    case "AWS_SECRET_ACCESS_KEY":
+                        keySecret = value;
+                        break;
+                    case "AWS_SESSION_TOKEN":
+                        keySession = value;
+                        break;
+                    case "AWS_DEFAULT_REGION":
+                        region = value;
+                        break;
+                }
+            }
+        }
+
+        if (keyId != null && keySecret != null) {
+            SigCredential credential;
+            if (keySession != null) {
+                credential = new SigTemporaryCredential(keyId, keySecret, keySession, Instant.now().getEpochSecond() + 86400);
+            } else {
+                credential = new SigStaticCredential(keyId, keySecret);
+            }
+            SigProfile.Builder builder = new SigProfile.Builder("env-"+keyId).withAccessKeyId(keyId);
+            if (region != null) {
+                builder.withRegion(region);
+            }
+            return builder.withCredentialProvider(new SigStaticCredentialProvider(credential), DEFAULT_STATIC_PRIORITY).build();
         }
         return null;
     }
