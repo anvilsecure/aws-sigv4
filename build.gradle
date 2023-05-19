@@ -5,6 +5,7 @@ plugins {
 version '0.2.8-all'
 
 compileJava.sourceCompatibility = JavaVersion.VERSION_11
+java.toolchain.languageVersion = JavaLanguageVersion.of(19)
 
 repositories {
     mavenCentral()
