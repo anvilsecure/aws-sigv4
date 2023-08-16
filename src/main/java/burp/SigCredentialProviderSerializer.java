@@ -12,7 +12,8 @@ public class SigCredentialProviderSerializer implements JsonSerializer<SigCreden
     private static final Map<String, Object> handledClasses = Map.of(
             SigStaticCredentialProvider.class.getName(), SigStaticCredentialProvider.class,
             SigHttpCredentialProvider.class.getName(), SigHttpCredentialProvider.class,
-            SigAssumeRoleCredentialProvider.class.getName(), SigAssumeRoleCredentialProvider.class);
+            SigAssumeRoleCredentialProvider.class.getName(), SigAssumeRoleCredentialProvider.class,
+            SigAwsProfileCredentialProvider.class.getName(), SigAwsProfileCredentialProvider.class);
 
     @Override
     public JsonElement serialize(SigCredentialProvider src, Type typeOfSrc, JsonSerializationContext context)

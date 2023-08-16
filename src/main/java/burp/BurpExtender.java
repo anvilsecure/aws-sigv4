@@ -631,7 +631,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         try {
             settings = getGsonSerializer(settingsVersion).fromJson(jsonString, ExtensionSettings.class);
         } catch (JsonParseException exc) {
-            logger.error("Failed to parse Json settings. Using defaults.");
+            logger.error("Failed to parse Json settings. Using defaults. Error: "+exc.getMessage());
             settings = ExtensionSettings.builder().build();
         }
 
@@ -640,8 +640,12 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         // load profiles
         Map<String, SigProfile> profileMap = settings.profiles();
         for (final String name : profileMap.keySet()) {
+            final SigProfile profile = profileMap.get(name);
+            if (profile.getCredentialProviderCount() <= 0) {
+                logger.error("Profile has no credential provider: "+name);
+            }
             try {
-                addProfile(profileMap.get(name));
+                addProfile(profile);
             } catch (IllegalArgumentException | NullPointerException exc) {
                 logger.error("Failed to add profile: "+name);
             }

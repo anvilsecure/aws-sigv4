@@ -22,6 +22,7 @@ public class SigProfile implements Cloneable
     public static final int DEFAULT_STATIC_PRIORITY = 100;
     public static final int DEFAULT_HTTP_PRIORITY = 20;
     public static final int DEFAULT_ASSUMEROLE_PRIORITY = 50;
+    public static final int DEFAULT_AWS_PROFILE_PRIORITY = 60;
     public static final int DISABLED_PRIORITY = -1;
 
     private static final transient LogWriter logger = LogWriter.getLogger();
@@ -66,6 +67,11 @@ public class SigProfile implements Cloneable
         return (SigHttpCredentialProvider) getCredentialProviderByName(SigHttpCredentialProvider.PROVIDER_NAME);
     }
 
+    public SigAwsProfileCredentialProvider getAwsProfileCredentialProvider()
+    {
+        return (SigAwsProfileCredentialProvider) getCredentialProviderByName(SigAwsProfileCredentialProvider.PROVIDER_NAME);
+    }
+
     public int getStaticCredentialProviderPriority()
     {
         SigCredentialProvider provider = getStaticCredentialProvider();
@@ -85,6 +91,14 @@ public class SigProfile implements Cloneable
     public int getHttpCredentialProviderPriority()
     {
         SigCredentialProvider provider = getHttpCredentialProvider();
+        if (provider != null)
+            return credentialProvidersPriority.get(provider.getName());
+        return DISABLED_PRIORITY;
+    }
+
+    public int getAwsProfileCredentialProviderPriority()
+    {
+        SigCredentialProvider provider = getAwsProfileCredentialProvider();
         if (provider != null)
             return credentialProvidersPriority.get(provider.getName());
         return DISABLED_PRIORITY;

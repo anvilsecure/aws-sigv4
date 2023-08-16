@@ -100,6 +100,10 @@ Permanent credentials (no "SessionToken") will be fetched every time they are us
 will only be fetched when they are nearing expiration. Expiration should be specified in epoch seconds or
 as an ISO 8601 timestamp.
 
+**AWS Profile**
+
+Fetch credentials from the files used by the AWS CLI ([docs](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)).
+
 ### Environment
 https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
 
