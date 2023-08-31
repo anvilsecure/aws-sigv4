@@ -50,7 +50,7 @@ import java.util.stream.Stream;
 public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtensionStateListener, IMessageEditorTabFactory, IContextMenuFactory
 {
     // make sure to update version in build.gradle as well
-    private static final String EXTENSION_VERSION = "0.2.8";
+    private static final String EXTENSION_VERSION = "0.2.9";
 
     private static final String BURP_SETTINGS_KEY = "JsonSettings";
     private static final String SETTING_VERSION = "ExtensionVersion";
