@@ -67,11 +67,8 @@ public class SigProfileImportDialog extends JDialog
         autoImportButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
-                final Path path = getAutoImportPath();
-                if (path != null) {
-                    importProfilesFromFile(path);
-                }
                 importProfilesFromEnvironment();
+                importProfilesFromCLI();
             }
         });
 
@@ -272,12 +269,23 @@ public class SigProfileImportDialog extends JDialog
 
     private Path getChosenImportPath()
     {
-        JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
+        String chooserPath = System.getProperty("user.home");
+        final Path importPath = getAutoImportPath();
+        if (importPath != null) {
+            chooserPath = importPath.toString();
+        }
+        JFileChooser chooser = new JFileChooser(chooserPath);
         chooser.setFileHidingEnabled(false);
         if (chooser.showOpenDialog(burp.getUiComponent()) == JFileChooser.APPROVE_OPTION) {
             return Paths.get(chooser.getSelectedFile().getPath());
         }
         return null;
+    }
+
+    private void importProfilesFromCLI() {
+        List<SigProfile> profiles = SigProfile.fromCLIConfig();
+        burp.logger.info(String.format("Importing %d credentials from default CLI location", profiles.size()));
+        updateImportTable(profiles, "**AWS CLI**");
     }
 
     private void importProfilesFromFile(final Path credPath)

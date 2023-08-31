@@ -2,6 +2,8 @@ package burp;
 
 import burp.error.SigCredentialProviderException;
 import org.apache.commons.lang3.StringUtils;
+import software.amazon.awssdk.profiles.Profile;
+import software.amazon.awssdk.profiles.ProfileFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -308,6 +310,25 @@ public class SigProfile implements Cloneable
             configPath = Paths.get(System.getProperty("user.home"), ".aws", "config");
         }
         return configPath;
+    }
+
+    public static List<SigProfile> fromCLIConfig() {
+        List<SigProfile> profileList = new ArrayList<>();
+        SigAwsProfileCredentialProvider.getAvailableProfileNames().forEach(name -> {
+            var awsProfileOption = ProfileFile.defaultProfileFile().profile(name);
+            if (awsProfileOption.isPresent()) {
+                final Profile awsProfile = awsProfileOption.get();
+                Builder newProfileBuilder = new Builder(name)
+                        .withService("")
+                        .withCredentialProvider(new SigAwsProfileCredentialProvider(name), SigProfile.DEFAULT_AWS_PROFILE_PRIORITY);
+                awsProfile.property("aws_access_key_id")
+                                .ifPresent(newProfileBuilder::withAccessKeyId);
+                awsProfile.property("region")
+                        .ifPresent(newProfileBuilder::withRegion);
+                profileList.add(newProfileBuilder.build());
+            }
+        });
+        return profileList;
     }
 
     // refs: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
