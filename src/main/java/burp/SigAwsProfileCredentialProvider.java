@@ -15,18 +15,11 @@ public class SigAwsProfileCredentialProvider implements SigCredentialProvider {
 
     public static final String PROVIDER_NAME = "AwsProfile";
     protected static LogWriter logger = LogWriter.getLogger();
-
-    private transient ProfileCredentialsProvider profileCredentialsProvider = null;
     private transient long expirationInEpochSeconds = 0;
     private transient SigCredential latestCredential = null;
     private String profileName;
 
     private SigAwsProfileCredentialProvider() { };
-
-    private void init() {
-        if (profileCredentialsProvider == null)
-            profileCredentialsProvider = ProfileCredentialsProvider.builder().profileFile(ProfileFileSupplier.defaultSupplier()).profileName(profileName).build();
-    }
 
     public SigAwsProfileCredentialProvider(final String profileName) {
         if (profileName == null || profileName.equals("")) {
@@ -52,13 +45,13 @@ public class SigAwsProfileCredentialProvider implements SigCredentialProvider {
 
     @Override
     synchronized public SigCredential getCredential() throws SigCredentialProviderException {
-        init();
         if (!isCredentialExpired()) {
             return latestCredential;
         }
         logger.debug(String.format("Refreshing credentials: profile=%s, expired=%d, now=%d", profileName, expirationInEpochSeconds, Instant.now().getEpochSecond()));
+
         AwsCredentials credential;
-        try {
+        try (var profileCredentialsProvider = ProfileCredentialsProvider.builder().profileFile(ProfileFileSupplier.defaultSupplier()).profileName(profileName).build()) {
             credential = profileCredentialsProvider.resolveCredentials();
         } catch (SdkClientException exc) {
             throw new SigCredentialProviderException(exc.getMessage());
