@@ -355,8 +355,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
 
                     // don't block the UI thread
                     (new Thread(() -> {
-                        try {
-                            StsClient stsClient = StsClient.builder()
+                        try (StsClient stsClient = StsClient.builder()
                                     .httpClient(new SdkHttpClientForBurp())
                                     .region(Region.US_EAST_1)
                                     .credentialsProvider(() -> {
@@ -366,15 +365,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                                         }
                                         return AwsBasicCredentials.create(cred.getAccessKeyId(), cred.getSecretKey());
                                     })
-                                    .build();
-                            GetCallerIdentityResponse response = stsClient.getCallerIdentity();
-                            JDialog dialog = new SigProfileTestDialog(null, profile, false, response);
+                                    .build()) {
+                            SigProfileTestDialog dialog = new SigProfileTestDialog(null, profile, false);
                             dialog.setVisible(true);
-                        } catch (SigCredentialProviderException | StsException exc) {
-                            // TODO: line wrap
+                            GetCallerIdentityResponse response = stsClient.getCallerIdentity();
+                            dialog.updateWithResult(response);
+                        } catch (Exception exc) {
                             JOptionPane.showMessageDialog(getUiComponent(),
                                     exc.getMessage(),
-                                    "Test Failed: "+profile.getName(),
+                                    "Credential Test Failed: "+profile.getName(),
                                     JOptionPane.ERROR_MESSAGE);
                         }
                     })).start();
