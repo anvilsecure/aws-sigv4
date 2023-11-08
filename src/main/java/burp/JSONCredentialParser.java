@@ -1,9 +1,6 @@
 package burp;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonSyntaxException;
+import com.google.gson.*;
 
 import java.time.DateTimeException;
 import java.time.Instant;
@@ -33,6 +30,15 @@ public class JSONCredentialParser {
         throw new IllegalArgumentException("Failed to parse expiration timestamp");
     }
 
+    // Convert a timestamp provided as a 1) long, 2) long as a string, or 3) ISO 8601 timestamp
+    private static long jsonExpirationTimeToEpochSeconds(final JsonElement jsonExpiration) {
+        try {
+            return jsonExpiration.getAsLong();
+        } catch (NumberFormatException ignore) {
+        }
+        return expirationTimeToEpochSeconds(jsonExpiration.getAsString());
+    }
+
     public static Optional<SigProfile> profileFromAssumeRoleJSON(final String jsonText) {
         try {
             JsonObject jsonObject = new Gson().fromJson(jsonText, JsonObject.class);
@@ -42,7 +48,7 @@ public class JSONCredentialParser {
                         jsonObject.get("AccessKeyId").getAsString(),
                         jsonObject.get("SecretAccessKey").getAsString(),
                         jsonObject.get("SessionToken").getAsString(),
-                        expirationTimeToEpochSeconds(jsonObject.get("Expiration").getAsString()));
+                        jsonExpirationTimeToEpochSeconds(jsonObject.get("Expiration")));
             } else {
                 staticCredential = new SigStaticCredential(
                         jsonObject.get("AccessKeyId").getAsString(),
@@ -55,7 +61,7 @@ public class JSONCredentialParser {
                     build();
             return Optional.of(profile);
         } catch (JsonParseException | NullPointerException | IllegalArgumentException exc) {
-            logger.error("Not a valid STS JSON credentials object");
+            logger.error("Not a valid STS JSON credentials object: " + exc.getMessage());
         }
         return Optional.empty();
     }
