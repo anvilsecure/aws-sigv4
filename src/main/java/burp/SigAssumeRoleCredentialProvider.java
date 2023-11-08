@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, Cloneable
 {
     public static final Pattern externalIdPattern = Pattern.compile("^[a-zA-Z0-9=@:/,._-]{2,1024}$");
-    public static final Pattern roleArnPattern = Pattern.compile("^arn:aws:iam::[0-9]{12}:role/[0-9a-zA-Z+=,.@_-]{1,64}$"); // regionless
+    public static final Pattern roleArnPattern = Pattern.compile("^arn:aws:iam::[0-9]{12}:role(?:/|/[\u0021-\u007E]{1,510}/)[0-9a-zA-Z+=,.@_-]{1,64}$"); // regionless
     public static final Pattern roleSessionNamePattern = Pattern.compile("^[a-zA-Z0-9+=@,._-]{2,64}$");
     public static final String PROVIDER_NAME = "STSAssumeRole";
 
