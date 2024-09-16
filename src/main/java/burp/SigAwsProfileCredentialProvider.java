@@ -53,8 +53,13 @@ public class SigAwsProfileCredentialProvider implements SigCredentialProvider {
         AwsCredentials credential;
         try (var profileCredentialsProvider = ProfileCredentialsProvider.builder().profileFile(ProfileFileSupplier.defaultSupplier()).profileName(profileName).build()) {
             credential = profileCredentialsProvider.resolveCredentials();
-        } catch (SdkClientException exc) {
-            throw new SigCredentialProviderException(exc.getMessage());
+        } catch (Exception exc) {
+            var cause = exc.getCause();
+            String msg = exc.getMessage();
+            if (cause != null) {
+                msg += ": "+cause.getMessage();
+            }
+            throw new SigCredentialProviderException(msg);
         }
         try {
             if (credential instanceof AwsBasicCredentials) {
