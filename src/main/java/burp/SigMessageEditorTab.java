@@ -56,7 +56,16 @@ public class SigMessageEditorTab implements IMessageEditorTab
             }
 
             this.content = content;
-            final SigProfile profile = this.burp.getSigningProfile(requestInfo.getHeaders());
+
+            SigProfile nonFinalProfile = null;
+            try {
+                nonFinalProfile = this.burp.getSigningProfile(requestInfo.getHeaders());
+            } catch (UserSpecifiedSigningProfileNotFoundException e) {
+                // Keep value as null
+                nonFinalProfile = null;
+            }
+            final SigProfile profile = nonFinalProfile;
+
             this.messageTextEditor.setText(this.burp.helpers.stringToBytes("Signing request..."));
 
             // thread this to prevent blocking the UI thread. signRequest can trigger an http request if temp credentials are configured.

@@ -802,7 +802,13 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
                         @Override
                         public void actionPerformed(ActionEvent actionEvent)
                         {
-                            final SigProfile profile = getSigningProfile(requestInfo.getHeaders());
+                            SigProfile profile = null;
+                            try {
+                                profile = getSigningProfile(requestInfo.getHeaders());
+                            } catch (UserSpecifiedSigningProfileNotFoundException e) {
+                                // handled below
+                                profile = null;
+                            }
                             String signedUrl = ""; // clear clipboard on error
                             if (profile == null) {
                                 final String msg = "Failed to determine signing profile for presigned URL";
@@ -1218,18 +1224,30 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
         }
     }
 
-    public SigProfile getSigningProfile(final List<String> headers)
+    public SigProfile getSigningProfile(final List<String> headers) throws UserSpecifiedSigningProfileNotFoundException
     {
         // check for http header that specifies a signing profile. if not specified in the header,
         // use the default profile. lastly, check Authorization header for an accessKeyId that matches
         // an existing profile.
-        // XXX if a non-existent profile is specified in the header, error out?
-        SigProfile signingProfile = headers.stream()
-                .filter(h -> StringUtils.startsWithIgnoreCase(h, PROFILE_HEADER_NAME+":"))
-                .map(h -> this.profileNameMap.get(splitHeader(h)[1]))
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(this.profileNameMap.get(getDefaultProfileName()));
+        Optional<String> userSpecifiedProfileOptional = headers.stream()
+            .filter(h -> StringUtils.startsWithIgnoreCase(h, PROFILE_HEADER_NAME+":"))
+            .map(h -> splitHeader(h)[1])
+            .findFirst();
+
+        SigProfile signingProfile = null;
+        if (userSpecifiedProfileOptional.isEmpty()) {
+            signingProfile = this.profileNameMap.get(getDefaultProfileName());
+        } else {
+            String userSpecifiedProfile = userSpecifiedProfileOptional.get();
+            signingProfile = this.profileNameMap.get(userSpecifiedProfile);
+            if (signingProfile == null) {
+                logger.error(
+                        String.format(
+                            "User specified profile \"%s\" not found",
+                            userSpecifiedProfile));
+                throw new UserSpecifiedSigningProfileNotFoundException();
+            }
+        }
 
         if (signingProfile == null) {
             signingProfile = headers.stream()
@@ -1629,7 +1647,15 @@ public class BurpExtender implements IBurpExtender, IHttpListener, ITab, IExtens
             }
 
             if (isAws4Request(request)) {
-                final SigProfile signingProfile = getSigningProfile(request.getHeaders());
+                SigProfile signingProfile = null;
+
+                try{
+                    signingProfile = getSigningProfile(request.getHeaders());
+                } catch(UserSpecifiedSigningProfileNotFoundException e) {
+                    JOptionPane.showMessageDialog(
+                            getUiComponent(),
+                            "The user specified signing profile was not found. See Extender log for details.");
+                }
 
                 if (signingProfile == null) {
                     logger.error("Failed to get signing profile");
