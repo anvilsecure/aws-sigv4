@@ -3,6 +3,8 @@ package burp;
 import burp.error.SigCredentialProviderException;
 import org.apache.commons.lang3.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sts.StsClient;
 import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
@@ -134,7 +136,7 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
             this.assumeRole.setDurationSeconds(durationSeconds);
             return this;
         }
-        public Builder withCredential(SigStaticCredential credential) {
+        public Builder withCredential(SigCredential credential) {
             if (credential == null) {
                 throw new IllegalArgumentException("AssumeRole permanent credential cannot be null");
             }
@@ -198,11 +200,16 @@ public class SigAssumeRoleCredentialProvider implements SigCredentialProvider, C
 
         burp.logger.info("Fetching temporary credentials for role "+this.roleArn);
         this.temporaryCredential = null;
-
+        AwsCredentials credentials;
+        if (staticCredential.isTemporary()) {
+            credentials = AwsSessionCredentials.create(staticCredential.getAccessKeyId(), staticCredential.getSecretKey(), ((SigTemporaryCredential) staticCredential).getSessionToken());
+        } else {
+            credentials = AwsBasicCredentials.create(staticCredential.getAccessKeyId(), staticCredential.getSecretKey());
+        }
         StsClient stsClient = StsClient.builder()
                 .httpClient(new SdkHttpClientForBurp())
                 .region(Region.US_EAST_1)
-                .credentialsProvider(() -> AwsBasicCredentials.create(staticCredential.getAccessKeyId(), staticCredential.getSecretKey()))
+                .credentialsProvider(() -> credentials)
                 .build();
 
         AssumeRoleRequest.Builder requestBuilder = AssumeRoleRequest.builder()

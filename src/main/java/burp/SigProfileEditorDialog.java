@@ -232,7 +232,12 @@ public class SigProfileEditorDialog extends JDialog
             try {
                 if (profile != null && !roleArnTextField.getText().equals("")) {
                     // edit dialog
-                    final SigStaticCredential staticCredential = new SigStaticCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
+                    SigCredential staticCredential;
+                    if (!sessionTokenTextField.getText().isEmpty()) {
+                        staticCredential = new SigTemporaryCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText(), sessionTokenTextField.getText(), Instant.now().getEpochSecond() + 86400);
+                    } else {
+                        staticCredential = new SigStaticCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
+                    }
                     if (profile.getAssumeRole() != null) {
                         assumeRole = new SigAssumeRoleCredentialProvider.Builder(profile.getAssumeRole())
                                 .withRoleArn(roleArnTextField.getText())
