@@ -229,24 +229,32 @@ public class SigProfileEditorDialog extends JDialog
             final String secretKey = secretKeyTextField.getText();
             final String sessionToken = sessionTokenTextField.getText();
 
+            SigCredential staticCredential = null;
             try {
-                if (profile != null && !roleArnTextField.getText().equals("")) {
-                    // edit dialog
-                    SigCredential staticCredential;
-                    if (!sessionTokenTextField.getText().isEmpty()) {
-                        staticCredential = new SigTemporaryCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText(), sessionTokenTextField.getText(), Instant.now().getEpochSecond() + 86400);
-                    } else {
-                        staticCredential = new SigStaticCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
+                if (!sessionToken.isEmpty()) {
+                    staticCredential = new SigTemporaryCredential(accessKeyId, secretKey, sessionToken, Instant.now().getEpochSecond() + 86400);
+                } else {
+                    staticCredential = new SigStaticCredential(accessKeyId, secretKey);
+                }
+            } catch (IllegalArgumentException ignore) {
+                // ignore
+            }
+
+            try {
+                if (!roleArnTextField.getText().isEmpty()) {
+                    if (staticCredential == null) {
+                        throw new IllegalArgumentException("AssumeRole profile requires credentials");
                     }
-                    if (profile.getAssumeRole() != null) {
+                    if (profile != null && profile.getAssumeRole() != null) {
+                        // edit existing AssumeRole profile
                         assumeRole = new SigAssumeRoleCredentialProvider.Builder(profile.getAssumeRole())
                                 .withRoleArn(roleArnTextField.getText())
                                 .withCredential(staticCredential)
                                 .tryExternalId(externalIdTextField.getText())
                                 .tryRoleSessionName(sessionNameTextField.getText())
                                 .build();
-                    }
-                    else {
+                    } else {
+                        // new AssumeRole profile
                         assumeRole = new SigAssumeRoleCredentialProvider.Builder(roleArnTextField.getText(), staticCredential)
                                 .tryExternalId(externalIdTextField.getText())
                                 .tryRoleSessionName(sessionNameTextField.getText())
@@ -257,15 +265,15 @@ public class SigProfileEditorDialog extends JDialog
                 SigProfile.Builder newProfileBuilder = new SigProfile.Builder(nameTextField.getText())
                         .withRegion(regionTextField.getText())
                         .withService(serviceTextField.getText());
-                if (!profileKeyIdTextField.getText().equals(""))
+                if (!profileKeyIdTextField.getText().isEmpty())
                     newProfileBuilder.withAccessKeyId(profileKeyIdTextField.getText());
 
-                if (!httpProviderUrlField.getText().equals("")) {
+                if (!httpProviderUrlField.getText().isEmpty()) {
                     newProfileBuilder.withCredentialProvider(new SigHttpCredentialProvider(httpProviderUrlField.getText(), httpProviderHeaderField.getText()),
                             httpProviderRadioButton.isSelected() ? SigProfile.DEFAULT_HTTP_PRIORITY : SigProfile.DISABLED_PRIORITY);
                 }
 
-                if (!awsProfileNameField.getText().equals("")) {
+                if (!awsProfileNameField.getText().isEmpty()) {
                     newProfileBuilder.withCredentialProvider(new SigAwsProfileCredentialProvider(awsProfileNameField.getText()),
                             awsProfileProviderRadioButton.isSelected() ? SigProfile.DEFAULT_AWS_PROFILE_PRIORITY : SigProfile.DISABLED_PRIORITY);
                 }
@@ -274,11 +282,8 @@ public class SigProfileEditorDialog extends JDialog
                     newProfileBuilder.withCredentialProvider(assumeRole, assumeRoleProviderRadioButton.isSelected() ? SigProfile.DEFAULT_ASSUMEROLE_PRIORITY : SigProfile.DISABLED_PRIORITY);
 
                 // if any cred fields are specified, attempt to use them.
-                if (!accessKeyId.equals("") || !secretKey.equals("") || !sessionToken.equals("")) {
-                    SigCredential credential = new SigStaticCredential(accessKeyIdTextField.getText(), secretKeyTextField.getText());
-                    if (!sessionToken.equals(""))
-                        credential = new SigTemporaryCredential(accessKeyId, secretKey, sessionToken, Instant.now().getEpochSecond() + 900);
-                    newProfileBuilder.withCredentialProvider(new SigStaticCredentialProvider(credential), SigProfile.DEFAULT_STATIC_PRIORITY);
+                if (staticCredential != null) {
+                    newProfileBuilder.withCredentialProvider(new SigStaticCredentialProvider(staticCredential), SigProfile.DEFAULT_STATIC_PRIORITY);
                 }
 
                 final SigProfile newProfile = newProfileBuilder.build();
