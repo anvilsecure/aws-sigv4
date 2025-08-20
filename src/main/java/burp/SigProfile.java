@@ -39,10 +39,10 @@ public class SigProfile implements Cloneable
     private HashMap<String, Integer> credentialProvidersPriority;
 
     // see https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
-    public static final Pattern profileNamePattern = Pattern.compile("^[\\w+=,.@-]{1,64}$");
+    public static final Pattern profileNamePattern = Pattern.compile("^[\\w+=,\\.@\\-]{1,64}$");
     public static final Pattern accessKeyIdPattern = Pattern.compile("^[\\w]{16,128}$");
     public static final Pattern regionPattern = Pattern.compile("^[a-zA-Z]{1,4}-(?:gov-)?[a-zA-Z]{1,16}-[0-9]{1,2}$");
-    public static final Pattern servicePattern = Pattern.compile("^[\\w_.-]{1,64}$");
+    public static final Pattern servicePattern = Pattern.compile("^[\\w_\\.\\-]{1,64}$");
 
     public String getName() { return this.name; }
     public SigAssumeRoleCredentialProvider getAssumeRole()
