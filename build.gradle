@@ -14,14 +14,14 @@ repositories {
 
 dependencies {
     implementation 'net.portswigger.burp.extender:burp-extender-api:2.1'
-    implementation 'com.google.code.gson:gson:2.10.+'
-    implementation platform('software.amazon.awssdk:bom:2.20.+')
+    implementation 'com.google.code.gson:gson:2.13.+'
+    implementation platform('software.amazon.awssdk:bom:2.32.+')
     implementation 'software.amazon.awssdk:auth'
     implementation 'software.amazon.awssdk:sts'
     implementation 'software.amazon.awssdk:apache-client'
     implementation 'software.amazon.awssdk:profiles'
     implementation 'org.slf4j:slf4j-simple:1.7.+'
-    implementation 'org.apache.commons:commons-lang3:3.12.+'
+    implementation 'org.apache.commons:commons-lang3:3.18.+'
     compileOnly 'org.projectlombok:lombok:1.18.+'
     annotationProcessor 'org.projectlombok:lombok:1.18.+'
 }
